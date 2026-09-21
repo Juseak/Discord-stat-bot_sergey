@@ -344,7 +344,6 @@ const commands = [
         .addUserOption(option =>
             option.setName("user").setDescription("Пользователь").setRequired(false)
         ),
-    // Добавили команду /troll в общий список
     new SlashCommandBuilder()
         .setName("troll")
         .setDescription("Потроллить бота")
@@ -382,39 +381,42 @@ client.on("interactionCreate", async interaction => {
         return;
     }
 
-    // Обработка команды /troll с процедурной генерацией ответов
+    // Обработка команды /troll (реалистичные дерзкие ответы)
     if (interaction.commandName === "troll") {
         const userText = interaction.options.getString("text");
 
-        const actions = [
-            "Иди", "Чел, иди", "Слышь, иди", "Лучше иди", 
-            "Завались и иди", "Меньше базарь и иди", "Вытри сопли и иди",
-            "Шел бы ты", "Хватит ныть, иди"
+        const starts = [
+            "Чел, ты реально",
+            "Слышь, сиди тихо,",
+            "Завали ебало,",
+            "Ты когда писал",
+            "Меньше пизди,",
+            "Иди нахуй,",
+            "Хули ты высрал"
         ];
         
-        const directions = [
-            "нахуй", "в окно", "уроки учить", "траву потрогать", 
-            "поспать", "своей мамке помогать", "в будку", 
-            "к зеркалу поплакать", "удалить Discord"
+        const middles = [
+            `вот это дерьмо про "${userText}"`,
+            `со своим текстом "${userText}"`,
+            `когда базаришь про "${userText}"`,
+            `с такой хуйнёй в голове`,
+            `и не позорься тут`
         ];
 
-        const modifiers = [
-            `с таким бредом: "${userText}"`,
-            `пока я твой текст "${userText}" не аннигилировал`,
-            `со своими отговорками про "${userText}"`,
-            `с этой парашей в голове`,
-            `пока тебе интернет по талонам не отключили`,
-            `и не позорься со своим "${userText}"`,
-            `и перевари то, что высрал`
+        const ends = [
+            "и иди уроки учи.",
+            "клоун комнатный.",
+            "моник протри от слюней.",
+            "мамке своей пожалуйся.",
+            "удаляй дискорд и спать.",
+            "сын помойки."
         ];
 
-        const randomAction = actions[Math.floor(Math.random() * actions.length)];
-        const randomDirection = directions[Math.floor(Math.random() * directions.length)];
-        const randomModifier = modifiers[Math.floor(Math.random() * modifiers.length)];
+        const r1 = starts[Math.floor(Math.random() * starts.length)];
+        const r2 = middles[Math.floor(Math.random() * middles.length)];
+        const r3 = ends[Math.floor(Math.random() * ends.length)];
 
-        const generatedResponse = `${randomAction} ${randomDirection} ${randomModifier}!`;
-
-        await interaction.reply({ content: generatedResponse });
+        await interaction.reply({ content: `${r1} ${r2}, ${r3}` });
     }
 });
 
