@@ -10,7 +10,12 @@ const {
 
 const { GoogleGenAI } = require("@google/genai");
 
-const { createCanvas, loadImage, GlobalFonts } = require("@napi-rs/canvas");
+const {
+    createCanvas,
+    loadImage,
+    GlobalFonts
+} = require("@napi-rs/canvas");
+
 const fs = require("fs");
 const path = require("path");
 
@@ -42,10 +47,18 @@ const gemini = new GoogleGenAI({
 // ==============================
 
 if (fs.existsSync(FONT_PATH)) {
-    GlobalFonts.registerFromPath(FONT_PATH, "CustomFont");
-    console.log("✓ Кастомный шрифт успешно загружен!");
+    GlobalFonts.registerFromPath(
+        FONT_PATH,
+        "CustomFont"
+    );
+
+    console.log(
+        "✓ Кастомный шрифт успешно загружен!"
+    );
 } else {
-    console.warn("❌ ВНИМАНИЕ: Файл font.ttf не найден!");
+    console.warn(
+        "❌ ВНИМАНИЕ: Файл font.ttf не найден!"
+    );
 }
 
 // ==============================
@@ -53,13 +66,40 @@ if (fs.existsSync(FONT_PATH)) {
 // ==============================
 
 const POS = {
-    username: { x: 768, y: 105 },
+    username: {
+        x: 768,
+        y: 105
+    },
 
-    voice:   { x: 154,  y: 1350, color: "#ff4b4b" },
-    message: { x: 461,  y: 1350, color: "#55a8ff" },
-    discord: { x: 768,  y: 1350, color: "#c080ff" },
-    gaming:  { x: 1075, y: 1350, color: "#43ff91" },
-    music:   { x: 1382, y: 1350, color: "#ffd84a" }
+    voice: {
+        x: 154,
+        y: 1350,
+        color: "#ff4b4b"
+    },
+
+    message: {
+        x: 461,
+        y: 1350,
+        color: "#55a8ff"
+    },
+
+    discord: {
+        x: 768,
+        y: 1350,
+        color: "#c080ff"
+    },
+
+    gaming: {
+        x: 1075,
+        y: 1350,
+        color: "#43ff91"
+    },
+
+    music: {
+        x: 1382,
+        y: 1350,
+        color: "#ffd84a"
+    }
 };
 
 // ==============================
@@ -120,7 +160,10 @@ function loadStats() {
 
     try {
         const raw = JSON.parse(
-            fs.readFileSync(STORAGE, "utf8")
+            fs.readFileSync(
+                STORAGE,
+                "utf8"
+            )
         );
 
         let db = raw.users
@@ -133,23 +176,38 @@ function loadStats() {
         const today = getTodayDateString();
 
         if (db.lastDate !== today) {
+
             for (const id in db.users) {
+
                 db.users[id].messages = 0;
+
                 db.users[id].voiceSeconds = 0;
+
                 db.users[id].discordSeconds = 0;
+
                 db.users[id].gamingSeconds = 0;
+
                 db.users[id].gamingGame = null;
 
-                if (db.users[id].voiceStartedAt) {
-                    db.users[id].voiceStartedAt = Date.now();
+                if (
+                    db.users[id].voiceStartedAt
+                ) {
+                    db.users[id].voiceStartedAt =
+                        Date.now();
                 }
 
-                if (db.users[id].discordStartedAt) {
-                    db.users[id].discordStartedAt = Date.now();
+                if (
+                    db.users[id].discordStartedAt
+                ) {
+                    db.users[id].discordStartedAt =
+                        Date.now();
                 }
 
-                if (db.users[id].gamingStartedAt) {
-                    db.users[id].gamingStartedAt = Date.now();
+                if (
+                    db.users[id].gamingStartedAt
+                ) {
+                    db.users[id].gamingStartedAt =
+                        Date.now();
                 }
             }
 
@@ -173,13 +231,20 @@ function saveStats() {
 
     fs.writeFileSync(
         STORAGE,
-        JSON.stringify(db, null, 2)
+        JSON.stringify(
+            db,
+            null,
+            2
+        )
     );
 }
 
 function getUser(id) {
+
     if (!db.users[id]) {
+
         db.users[id] = {
+
             messages: 0,
 
             voiceSeconds: 0,
@@ -202,15 +267,30 @@ function getUser(id) {
 // ==============================
 
 function formatTime(seconds) {
-    seconds = Math.max(0, Math.floor(seconds));
+
+    seconds = Math.max(
+        0,
+        Math.floor(seconds)
+    );
 
     if (isNaN(seconds)) {
         return "0m";
     }
 
-    const days = Math.floor(seconds / 86400);
-    const hours = Math.floor((seconds % 86400) / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
+    const days =
+        Math.floor(
+            seconds / 86400
+        );
+
+    const hours =
+        Math.floor(
+            (seconds % 86400) / 3600
+        );
+
+    const minutes =
+        Math.floor(
+            (seconds % 3600) / 60
+        );
 
     if (days > 0) {
         return `${days}d ${hours}h`;
@@ -223,19 +303,28 @@ function formatTime(seconds) {
     return `${minutes}m`;
 }
 
-function calculateCurrent(baseSeconds, startTime) {
+function calculateCurrent(
+    baseSeconds,
+    startTime
+) {
+
     if (!startTime) {
         return baseSeconds || 0;
     }
 
-    const diff = Math.floor(
-        (Date.now() - startTime) / 1000
-    );
+    const diff =
+        Math.floor(
+            (Date.now() - startTime) / 1000
+        );
 
-    return (baseSeconds || 0) + (diff > 0 ? diff : 0);
+    return (
+        (baseSeconds || 0) +
+        (diff > 0 ? diff : 0)
+    );
 }
 
 function currentVoiceSeconds(data) {
+
     return calculateCurrent(
         data.voiceSeconds,
         data.voiceStartedAt
@@ -243,6 +332,7 @@ function currentVoiceSeconds(data) {
 }
 
 function currentDiscordSeconds(data) {
+
     return calculateCurrent(
         data.discordSeconds,
         data.discordStartedAt
@@ -250,6 +340,7 @@ function currentDiscordSeconds(data) {
 }
 
 function currentGamingSeconds(data) {
+
     return calculateCurrent(
         data.gamingSeconds,
         data.gamingStartedAt
@@ -257,151 +348,231 @@ function currentGamingSeconds(data) {
 }
 
 function finalizeVoice(data) {
-    data.voiceSeconds = currentVoiceSeconds(data);
+
+    data.voiceSeconds =
+        currentVoiceSeconds(data);
+
     data.voiceStartedAt = null;
 }
 
 function finalizeDiscord(data) {
-    data.discordSeconds = currentDiscordSeconds(data);
+
+    data.discordSeconds =
+        currentDiscordSeconds(data);
+
     data.discordStartedAt = null;
 }
 
 function finalizeGaming(data) {
-    data.gamingSeconds = currentGamingSeconds(data);
+
+    data.gamingSeconds =
+        currentGamingSeconds(data);
+
     data.gamingStartedAt = null;
+
     data.gamingGame = null;
 }
 
 // ==============================
-// TRACKING EVENTS
+// MESSAGE TRACKING
 // ==============================
 
-client.on("messageCreate", message => {
-    if (
-        !message.guild ||
-        !message.author ||
-        message.author.bot
-    ) {
-        return;
+client.on(
+    "messageCreate",
+    message => {
+
+        if (
+            !message.guild ||
+            !message.author ||
+            message.author.bot
+        ) {
+            return;
+        }
+
+        const data =
+            getUser(
+                message.author.id
+            );
+
+        data.messages =
+            (data.messages || 0) + 1;
+
+        saveStats();
     }
-
-    const data = getUser(message.author.id);
-
-    data.messages = (data.messages || 0) + 1;
-
-    saveStats();
-});
+);
 
 // ==============================
 // VOICE TRACKING
 // ==============================
 
-client.on("voiceStateUpdate", (oldState, newState) => {
-    if (
-        !newState.member ||
-        newState.member.user.bot
-    ) {
-        return;
-    }
+client.on(
+    "voiceStateUpdate",
+    (oldState, newState) => {
 
-    const data = getUser(newState.id);
-
-    if (!oldState.channelId && newState.channelId) {
-        if (!data.voiceStartedAt) {
-            data.voiceStartedAt = Date.now();
+        if (
+            !newState.member ||
+            newState.member.user.bot
+        ) {
+            return;
         }
-    }
 
-    if (oldState.channelId && !newState.channelId) {
-        finalizeVoice(data);
-    }
+        const data =
+            getUser(newState.id);
 
-    saveStats();
-});
+        // Вошёл в голосовой канал
+
+        if (
+            !oldState.channelId &&
+            newState.channelId
+        ) {
+
+            if (!data.voiceStartedAt) {
+
+                data.voiceStartedAt =
+                    Date.now();
+            }
+        }
+
+        // Вышел из голосового канала
+
+        if (
+            oldState.channelId &&
+            !newState.channelId
+        ) {
+
+            finalizeVoice(data);
+        }
+
+        saveStats();
+    }
+);
 
 // ==============================
 // PRESENCE / GAMING TRACKING
 // ==============================
 
-function presenceIsOnline(presence) {
+function presenceIsOnline(
+    presence
+) {
+
     return (
         presence &&
-        ["online", "idle", "dnd"].includes(
+        [
+            "online",
+            "idle",
+            "dnd"
+        ].includes(
             presence.status
         )
     );
 }
 
-client.on("presenceUpdate", (oldPresence, newPresence) => {
-    if (
-        !newPresence?.userId ||
-        !newPresence.member ||
-        newPresence.member.user.bot
-    ) {
-        return;
-    }
+client.on(
+    "presenceUpdate",
+    (oldPresence, newPresence) => {
 
-    const data = getUser(newPresence.userId);
-
-    // Discord online time
-
-    const online = presenceIsOnline(newPresence);
-
-    if (online && !data.discordStartedAt) {
-        data.discordStartedAt = Date.now();
-
-    } else if (
-        !online &&
-        data.discordStartedAt
-    ) {
-        finalizeDiscord(data);
-    }
-
-    // Game tracking
-
-    const gameActivity =
-        newPresence.activities?.find(
-            activity =>
-                activity.type === ActivityType.Playing
-        );
-
-    const gameName =
-        gameActivity?.name || null;
-
-    if (!gameName) {
-
-        if (data.gamingStartedAt) {
-            finalizeGaming(data);
+        if (
+            !newPresence?.userId ||
+            !newPresence.member ||
+            newPresence.member.user.bot
+        ) {
+            return;
         }
 
-    } else {
+        const data =
+            getUser(
+                newPresence.userId
+            );
 
-        if (!data.gamingStartedAt) {
+        // ==========================
+        // DISCORD ONLINE
+        // ==========================
 
-            data.gamingGame = gameName;
-            data.gamingStartedAt = Date.now();
+        const online =
+            presenceIsOnline(
+                newPresence
+            );
 
-        } else if (
-            data.gamingGame !== gameName
+        if (
+            online &&
+            !data.discordStartedAt
         ) {
 
-            finalizeGaming(data);
+            data.discordStartedAt =
+                Date.now();
 
-            data.gamingGame = gameName;
-            data.gamingStartedAt = Date.now();
+        } else if (
+            !online &&
+            data.discordStartedAt
+        ) {
+
+            finalizeDiscord(data);
         }
-    }
 
-    saveStats();
-});
+        // ==========================
+        // GAME TRACKING
+        // ==========================
+
+        const gameActivity =
+            newPresence.activities?.find(
+                activity =>
+                    activity.type ===
+                    ActivityType.Playing
+            );
+
+        const gameName =
+            gameActivity?.name || null;
+
+        if (!gameName) {
+
+            if (
+                data.gamingStartedAt
+            ) {
+
+                finalizeGaming(data);
+            }
+
+        } else {
+
+            if (
+                !data.gamingStartedAt
+            ) {
+
+                data.gamingGame =
+                    gameName;
+
+                data.gamingStartedAt =
+                    Date.now();
+
+            } else if (
+                data.gamingGame !==
+                gameName
+            ) {
+
+                finalizeGaming(data);
+
+                data.gamingGame =
+                    gameName;
+
+                data.gamingStartedAt =
+                    Date.now();
+            }
+        }
+
+        saveStats();
+    }
+);
 
 // ==============================
 // AUTO SAVE
 // ==============================
 
-setInterval(() => {
-    saveStats();
-}, 30000);
+setInterval(
+    () => {
+        saveStats();
+    },
+    30000
+);
 
 // ==============================
 // IMAGE RENDERING
@@ -416,19 +587,29 @@ function drawCentered(
     color,
     size
 ) {
+
     ctx.save();
 
     ctx.font =
         `bold ${size}px "CustomFont", sans-serif`;
 
-    ctx.fillStyle = color;
+    ctx.fillStyle =
+        color;
 
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
+    ctx.textAlign =
+        "center";
 
-    ctx.shadowColor = "rgba(0, 0, 0, 1)";
-    ctx.shadowBlur = 12;
-    ctx.shadowOffsetY = 4;
+    ctx.textBaseline =
+        "middle";
+
+    ctx.shadowColor =
+        "rgba(0, 0, 0, 1)";
+
+    ctx.shadowBlur =
+        12;
+
+    ctx.shadowOffsetY =
+        4;
 
     ctx.fillText(
         text,
@@ -449,15 +630,29 @@ function drawStatBadge(
     value,
     color
 ) {
+
     ctx.save();
 
-    const rx = x - w / 2;
-    const ry = y - h / 2;
+    const rx =
+        x - w / 2;
+
+    const ry =
+        y - h / 2;
+
     const radius = 22;
 
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 15;
-    ctx.shadowOffsetY = 0;
+    // Glow
+
+    ctx.shadowColor =
+        color;
+
+    ctx.shadowBlur =
+        15;
+
+    ctx.shadowOffsetY =
+        0;
+
+    // Background
 
     ctx.fillStyle =
         "rgba(10, 10, 10, 0.88)";
@@ -474,10 +669,16 @@ function drawStatBadge(
 
     ctx.fill();
 
-    ctx.shadowBlur = 0;
+    // Border
 
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 3;
+    ctx.shadowBlur =
+        0;
+
+    ctx.strokeStyle =
+        color;
+
+    ctx.lineWidth =
+        3;
 
     ctx.beginPath();
 
@@ -491,19 +692,28 @@ function drawStatBadge(
 
     ctx.stroke();
 
+    // Text
+
     ctx.font =
         `bold 28px "CustomFont", sans-serif`;
 
-    ctx.fillStyle = "#FFFFFF";
+    ctx.fillStyle =
+        "#FFFFFF";
 
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
+    ctx.textAlign =
+        "center";
+
+    ctx.textBaseline =
+        "middle";
 
     ctx.shadowColor =
         "rgba(0, 0, 0, 1)";
 
-    ctx.shadowBlur = 6;
-    ctx.shadowOffsetY = 2;
+    ctx.shadowBlur =
+        6;
+
+    ctx.shadowOffsetY =
+        2;
 
     ctx.fillText(
         String(value),
@@ -519,10 +729,16 @@ function drawStatBadge(
 // GENERATE CARD
 // ==============================
 
-async function generateCard(user, data) {
+async function generateCard(
+    user,
+    data
+) {
 
     const canvas =
-        createCanvas(WIDTH, HEIGHT);
+        createCanvas(
+            WIDTH,
+            HEIGHT
+        );
 
     const ctx =
         canvas.getContext("2d");
@@ -584,7 +800,9 @@ async function generateCard(user, data) {
     // Messages
 
     const messagesText =
-        String(data.messages || 0);
+        String(
+            data.messages || 0
+        );
 
     // Discord
 
@@ -602,7 +820,9 @@ async function generateCard(user, data) {
         currentGamingSeconds(data);
 
     const gamingTime =
-        formatTime(activeGamingSec);
+        formatTime(
+            activeGamingSec
+        );
 
     const gamingText =
         data.gamingGame &&
@@ -666,23 +886,30 @@ async function generateCard(user, data) {
         POS.music.color
     );
 
-    return canvas.toBuffer("image/png");
+    return canvas.toBuffer(
+        "image/png"
+    );
 }
 
 // ==============================
 // GEMINI AI
 // ==============================
 
-async function askAI(prompt) {
+async function askAI(
+    prompt
+) {
 
     const response =
         await gemini.models.generateContent({
 
-            model: "gemini-2.5-flash-lite",
+            model:
+                "gemini-2.5-flash-lite",
 
-            contents: prompt,
+            contents:
+                prompt,
 
             config: {
+
                 systemInstruction:
                     "Ты полезный AI-помощник в Discord. Отвечай понятно, дружелюбно и по существу."
             }
@@ -703,37 +930,62 @@ const commands = [
     // /stats
 
     new SlashCommandBuilder()
-        .setName("stats")
+
+        .setName(
+            "stats"
+        )
+
         .setDescription(
             "Показать статистику пользователя"
         )
-        .addUserOption(option =>
-            option
-                .setName("user")
-                .setDescription(
-                    "Пользователь"
-                )
-                .setRequired(false)
+
+        .addUserOption(
+            option =>
+                option
+                    .setName(
+                        "user"
+                    )
+
+                    .setDescription(
+                        "Пользователь"
+                    )
+
+                    .setRequired(
+                        false
+                    )
         ),
 
     // /ai
 
     new SlashCommandBuilder()
-        .setName("ai")
+
+        .setName(
+            "ai"
+        )
+
         .setDescription(
             "Задать вопрос нейросети"
         )
-        .addStringOption(option =>
-            option
-                .setName("prompt")
-                .setDescription(
-                    "Ваш запрос к нейросети"
-                )
-                .setRequired(true)
+
+        .addStringOption(
+            option =>
+                option
+                    .setName(
+                        "prompt"
+                    )
+
+                    .setDescription(
+                        "Ваш запрос к нейросети"
+                    )
+
+                    .setRequired(
+                        true
+                    )
         )
 
-].map(command =>
-    command.toJSON()
+].map(
+    command =>
+        command.toJSON()
 );
 
 // ==============================
@@ -743,14 +995,20 @@ const commands = [
 async function registerCommands() {
 
     const rest =
-        new REST({ version: "10" })
-            .setToken(TOKEN);
+        new REST({
+            version: "10"
+        })
+            .setToken(
+                TOKEN
+            );
 
     await rest.put(
+
         Routes.applicationGuildCommands(
             CLIENT_ID,
             GUILD_ID
         ),
+
         {
             body: commands
         }
@@ -780,7 +1038,8 @@ client.on(
         // ==========================
 
         if (
-            interaction.commandName === "stats"
+            interaction.commandName ===
+            "stats"
         ) {
 
             await interaction.deferReply();
@@ -788,10 +1047,13 @@ client.on(
             const target =
                 interaction.options.getUser(
                     "user"
-                ) || interaction.user;
+                ) ||
+                interaction.user;
 
             const data =
-                getUser(target.id);
+                getUser(
+                    target.id
+                );
 
             try {
 
@@ -805,12 +1067,15 @@ client.on(
                     new AttachmentBuilder(
                         imageBuffer,
                         {
-                            name: "stats.png"
+                            name:
+                                "stats.png"
                         }
                     );
 
                 await interaction.editReply({
-                    files: [attachment]
+                    files: [
+                        attachment
+                    ]
                 });
 
             } catch (error) {
@@ -833,7 +1098,8 @@ client.on(
         // ==========================
 
         if (
-            interaction.commandName === "ai"
+            interaction.commandName ===
+            "ai"
         ) {
 
             await interaction.deferReply();
@@ -845,7 +1111,11 @@ client.on(
 
             try {
 
-                if (!prompt || !prompt.trim()) {
+                if (
+                    !prompt ||
+                    !prompt.trim()
+                ) {
+
                     await interaction.editReply(
                         "❌ Напиши запрос для нейросети."
                     );
@@ -858,11 +1128,15 @@ client.on(
                 );
 
                 const answer =
-                    await askAI(prompt);
+                    await askAI(
+                        prompt
+                    );
 
                 // Discord максимум 2000 символов
 
-                if (answer.length <= 2000) {
+                if (
+                    answer.length <= 2000
+                ) {
 
                     await interaction.editReply(
                         answer
@@ -877,6 +1151,7 @@ client.on(
                         i < answer.length;
                         i += 1900
                     ) {
+
                         chunks.push(
                             answer.slice(
                                 i,
@@ -889,7 +1164,10 @@ client.on(
                         chunks.shift()
                     );
 
-                    for (const chunk of chunks) {
+                    for (
+                        const chunk of chunks
+                    ) {
+
                         await interaction.followUp(
                             chunk
                         );
@@ -927,7 +1205,9 @@ client.once(
 
         // Проверяем Gemini-ключ
 
-        if (process.env.GEMINI_API_KEY) {
+        if (
+            process.env.GEMINI_API_KEY
+        ) {
 
             console.log(
                 "✓ GEMINI_API_KEY найдена"
@@ -951,16 +1231,20 @@ client.once(
         // Восстановление активных сессий
 
         for (
-            const guild of client.guilds.cache.values()
+            const guild
+            of client.guilds.cache.values()
         ) {
 
             await guild.members.fetch();
 
             for (
-                const member of guild.members.cache.values()
+                const member
+                of guild.members.cache.values()
             ) {
 
-                if (member.user.bot) {
+                if (
+                    member.user.bot
+                ) {
                     continue;
                 }
 
@@ -968,7 +1252,9 @@ client.once(
                     member.presence;
 
                 const data =
-                    getUser(member.id);
+                    getUser(
+                        member.id
+                    );
 
                 // Discord online
 
@@ -1007,7 +1293,8 @@ client.once(
                 // Voice
 
                 for (
-                    const channel of guild.channels.cache.values()
+                    const channel
+                    of guild.channels.cache.values()
                 ) {
 
                     if (
@@ -1047,7 +1334,9 @@ client.once(
 
         await registerCommands();
 
-        await client.login(TOKEN);
+        await client.login(
+            TOKEN
+        );
 
     } catch (error) {
 
