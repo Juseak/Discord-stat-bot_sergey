@@ -67,11 +67,8 @@ function loadStats() {
 
     try {
         const raw = JSON.parse(fs.readFileSync(STORAGE, "utf8"));
-        
-        // Поддержка старого формата, если файл уже существовал без обертки
         let db = raw.users ? raw : { lastDate: getTodayDateString(), users: raw };
 
-        // Проверка смены дня (сброс ежедневной статистики)
         const today = getTodayDateString();
         if (db.lastDate !== today) {
             for (let id in db.users) {
@@ -80,7 +77,7 @@ function loadStats() {
                 db.users[id].discordSeconds = 0;
                 db.users[id].gamingSeconds = 0;
                 db.users[id].gamingGame = null;
-                // Сбрасываем счетчики сессий, чтобы они не уходили в минус или бесконечность
+
                 if (db.users[id].voiceStartedAt) db.users[id].voiceStartedAt = Date.now();
                 if (db.users[id].discordStartedAt) db.users[id].discordStartedAt = Date.now();
                 if (db.users[id].gamingStartedAt) db.users[id].gamingStartedAt = Date.now();
@@ -105,13 +102,10 @@ function getUser(id) {
     if (!db.users[id]) {
         db.users[id] = {
             messages: 0,
-
             voiceSeconds: 0,
             voiceStartedAt: null,
-
             discordSeconds: 0,
             discordStartedAt: null,
-
             gamingSeconds: 0,
             gamingGame: null,
             gamingStartedAt: null
@@ -140,49 +134,34 @@ function formatTime(seconds) {
 
 function currentVoiceSeconds(data) {
     if (!data.voiceStartedAt) return data.voiceSeconds;
-
-    return data.voiceSeconds +
-        Math.floor((Date.now() - data.voiceStartedAt) / 1000);
+    return data.voiceSeconds + Math.floor((Date.now() - data.voiceStartedAt) / 1000);
 }
 
 function currentDiscordSeconds(data) {
     if (!data.discordStartedAt) return data.discordSeconds;
-
-    return data.discordSeconds +
-        Math.floor((Date.now() - data.discordStartedAt) / 1000);
+    return data.discordSeconds + Math.floor((Date.now() - data.discordStartedAt) / 1000);
 }
 
 function currentGamingSeconds(data) {
     if (!data.gamingStartedAt) return data.gamingSeconds;
-
-    return data.gamingSeconds +
-        Math.floor((Date.now() - data.gamingStartedAt) / 1000);
+    return data.gamingSeconds + Math.floor((Date.now() - data.gamingStartedAt) / 1000);
 }
 
 function finalizeVoice(data) {
     if (!data.voiceStartedAt) return;
-
-    data.voiceSeconds +=
-        Math.floor((Date.now() - data.voiceStartedAt) / 1000);
-
+    data.voiceSeconds += Math.floor((Date.now() - data.voiceStartedAt) / 1000);
     data.voiceStartedAt = null;
 }
 
 function finalizeDiscord(data) {
     if (!data.discordStartedAt) return;
-
-    data.discordSeconds +=
-        Math.floor((Date.now() - data.discordStartedAt) / 1000);
-
+    data.discordSeconds += Math.floor((Date.now() - data.discordStartedAt) / 1000);
     data.discordStartedAt = null;
 }
 
 function finalizeGaming(data) {
     if (!data.gamingStartedAt) return;
-
-    data.gamingSeconds +=
-        Math.floor((Date.now() - data.gamingStartedAt) / 1000);
-
+    data.gamingSeconds += Math.floor((Date.now() - data.gamingStartedAt) / 1000);
     data.gamingStartedAt = null;
     data.gamingGame = null;
 }
@@ -195,9 +174,7 @@ client.on("messageCreate", message => {
     if (!message.guild || message.author.bot) return;
 
     const data = getUser(message.author.id);
-
     data.messages++;
-
     saveStats();
 });
 
@@ -231,7 +208,6 @@ client.on("presenceUpdate", (oldPresence, newPresence) => {
     if (!newPresence?.userId) return;
 
     const member = newPresence.member;
-
     if (member?.user?.bot) return;
 
     const data = getUser(newPresence.userId);
@@ -251,17 +227,14 @@ client.on("presenceUpdate", (oldPresence, newPresence) => {
     if (!data.gamingStartedAt) {
         data.gamingGame = gameName;
         data.gamingStartedAt = Date.now();
-
         saveStats();
         return;
     }
 
     if (data.gamingGame !== gameName) {
         finalizeGaming(data);
-
         data.gamingGame = gameName;
         data.gamingStartedAt = Date.now();
-
         saveStats();
     }
 });
@@ -272,7 +245,6 @@ client.on("presenceUpdate", (oldPresence, newPresence) => {
 
 function presenceIsOnline(presence) {
     if (!presence) return false;
-
     return ["online", "idle", "dnd"].includes(presence.status);
 }
 
@@ -280,22 +252,18 @@ client.on("presenceUpdate", (oldPresence, newPresence) => {
     if (!newPresence?.userId) return;
 
     const member = newPresence.member;
-
     if (member?.user?.bot) return;
 
     const data = getUser(newPresence.userId);
-
     const online = presenceIsOnline(newPresence);
 
     if (online && !data.discordStartedAt) {
         data.discordStartedAt = Date.now();
-
         saveStats();
     }
 
     if (!online && data.discordStartedAt) {
         finalizeDiscord(data);
-
         saveStats();
     }
 });
@@ -314,98 +282,35 @@ setInterval(() => {
 
 function roundedRect(ctx, x, y, w, h, r) {
     ctx.beginPath();
-
     ctx.moveTo(x + r, y);
     ctx.lineTo(x + w - r, y);
-
-    ctx.quadraticCurveTo(
-        x + w,
-        y,
-        x + w,
-        y + r
-    );
-
-    ctx.lineTo(
-        x + w,
-        y + h - r
-    );
-
-    ctx.quadraticCurveTo(
-        x + w,
-        y + h,
-        x + w - r,
-        y + h
-    );
-
-    ctx.lineTo(
-        x + r,
-        y + h
-    );
-
-    ctx.quadraticCurveTo(
-        x,
-        y + h,
-        x,
-        y + h - r
-    );
-
-    ctx.lineTo(
-        x,
-        y + r
-    );
-
-    ctx.quadraticCurveTo(
-        x,
-        y,
-        x + r,
-        y
-    );
-
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
     ctx.closePath();
 }
 
-function fitFont(
-    ctx,
-    text,
-    maxWidth,
-    startSize,
-    family = "Arial"
-) {
+function fitFont(ctx, text, maxWidth, startSize, family = "Arial") {
     let size = startSize;
-
     while (size > 16) {
         ctx.font = `bold ${size}px ${family}`;
-
         if (ctx.measureText(text).width <= maxWidth) {
             return size;
         }
-
         size--;
     }
-
     return size;
 }
 
-function drawCentered(
-    ctx,
-    text,
-    x,
-    y,
-    maxWidth,
-    color,
-    size
-) {
-    const finalSize = fitFont(
-        ctx,
-        text,
-        maxWidth,
-        size
-    );
+function drawCentered(ctx, text, x, y, maxWidth, color, size) {
+    const finalSize = fitFont(ctx, text, maxWidth, size);
 
     ctx.font = `bold ${finalSize}px Arial`;
-
     ctx.fillStyle = color;
-
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
@@ -413,11 +318,7 @@ function drawCentered(
     ctx.shadowBlur = 8;
     ctx.shadowOffsetY = 3;
 
-    ctx.fillText(
-        text,
-        x,
-        y
-    );
+    ctx.fillText(text, x, y);
 
     ctx.shadowColor = "transparent";
     ctx.shadowBlur = 0;
@@ -428,50 +329,21 @@ function drawCentered(
 // STATISTIC BADGE
 // ==============================
 
-function drawStatBadge(
-    ctx,
-    x,
-    y,
-    w,
-    h,
-    value,
-    color
-) {
+function drawStatBadge(ctx, x, y, w, h, value, color) {
     ctx.save();
 
-    // Transparent black background
     ctx.fillStyle = "rgba(0,0,0,0.58)";
-
-    roundedRect(
-        ctx,
-        x - w / 2,
-        y - h / 2,
-        w,
-        h,
-        18
-    );
-
+    roundedRect(ctx, x - w / 2, y - h / 2, w, h, 18);
     ctx.fill();
 
-    // Colored border
     ctx.strokeStyle = color;
     ctx.lineWidth = 3;
     ctx.globalAlpha = 0.9;
-
     ctx.stroke();
 
     ctx.restore();
 
-    // Statistic text
-    drawCentered(
-        ctx,
-        value,
-        x,
-        y,
-        w - 24,
-        "#ffffff",
-        36
-    );
+    drawCentered(ctx, value, x, y, w - 24, "#ffffff", 36);
 }
 
 // ==============================
@@ -479,40 +351,21 @@ function drawStatBadge(
 // ==============================
 
 async function generateCard(user, data) {
-    const canvas = createCanvas(
-        WIDTH,
-        HEIGHT
-    );
-
+    const canvas = createCanvas(WIDTH, HEIGHT);
     const ctx = canvas.getContext("2d");
 
     const template = await loadImage(
         await fs.promises.readFile(TEMPLATE)
     );
 
-    ctx.drawImage(
-        template,
-        0,
-        0,
-        WIDTH,
-        HEIGHT
-    );
+    ctx.drawImage(template, 0, 0, WIDTH, HEIGHT);
 
     // ==========================
     // USERNAME
     // ==========================
 
     ctx.fillStyle = "rgba(0,0,0,0.38)";
-
-    roundedRect(
-        ctx,
-        470,
-        35,
-        600,
-        90,
-        30
-    );
-
+    roundedRect(ctx, 470, 35, 600, 90, 30);
     ctx.fill();
 
     drawCentered(
@@ -526,89 +379,31 @@ async function generateCard(user, data) {
     );
 
     // ==========================
-    // STATISTICS (FOR TODAY)
+    // STATISTICS
     // ==========================
 
-    const voice =
-        formatTime(
-            currentVoiceSeconds(data)
-        );
+    const voice = formatTime(currentVoiceSeconds(data));
+    const messages = String(data.messages);
+    const discord = formatTime(currentDiscordSeconds(data));
+    
+    const activeGamingSec = currentGamingSeconds(data);
+    const gamingTime = formatTime(activeGamingSec);
 
-    const messages =
-        String(data.messages);
-
-    const discord =
-        formatTime(
-            currentDiscordSeconds(data)
-        );
-
-    const gamingTime =
-        formatTime(
-            currentGamingSeconds(data)
-        );
-
-    const gamingText =
-        data.gamingGame
-            ? `${data.gamingGame} • ${gamingTime}`
-            : gamingTime;
+    const gamingText = data.gamingGame && activeGamingSec > 0
+        ? `${data.gamingGame} • ${gamingTime}`
+        : (activeGamingSec > 0 ? gamingTime : "0m");
 
     // ==========================
     // STATISTIC POSITIONS
     // ==========================
 
-    drawStatBadge(
-        ctx,
-        POS.voice.x,
-        POS.voice.y,
-        250,
-        64,
-        voice,
-        POS.voice.color
-    );
+    drawStatBadge(ctx, POS.voice.x, POS.voice.y, 250, 64, voice, POS.voice.color);
+    drawStatBadge(ctx, POS.message.x, POS.message.y, 250, 64, messages, POS.message.color);
+    drawStatBadge(ctx, POS.discord.x, POS.discord.y, 250, 64, discord, POS.discord.color);
+    drawStatBadge(ctx, POS.gaming.x, POS.gaming.y, 280, 64, gamingText, POS.gaming.color);
+    drawStatBadge(ctx, POS.music.x, POS.music.y, 250, 64, "SOON", POS.music.color);
 
-    drawStatBadge(
-        ctx,
-        POS.message.x,
-        POS.message.y,
-        250,
-        64,
-        messages,
-        POS.message.color
-    );
-
-    drawStatBadge(
-        ctx,
-        POS.discord.x,
-        POS.discord.y,
-        250,
-        64,
-        discord,
-        POS.discord.color
-    );
-
-    drawStatBadge(
-        ctx,
-        POS.gaming.x,
-        POS.gaming.y,
-        280,
-        64,
-        gamingText,
-        POS.gaming.color
-    );
-
-    drawStatBadge(
-        ctx,
-        POS.music.x,
-        POS.music.y,
-        250,
-        64,
-        "SOON",
-        POS.music.color
-    );
-
-    return canvas.toBuffer(
-        "image/png"
-    );
+    return canvas.toBuffer("image/png");
 }
 
 // ==============================
@@ -618,9 +413,7 @@ async function generateCard(user, data) {
 const commands = [
     new SlashCommandBuilder()
         .setName("stats")
-        .setDescription(
-            "Показать статистику пользователя"
-        )
+        .setDescription("Показать статистику пользователя")
         .addUserOption(option =>
             option
                 .setName("user")
@@ -634,142 +427,78 @@ const commands = [
 // ==============================
 
 async function registerCommands() {
-    const rest =
-        new REST({ version: "10" })
-            .setToken(TOKEN);
+    const rest = new REST({ version: "10" }).setToken(TOKEN);
 
     await rest.put(
-        Routes.applicationGuildCommands(
-            CLIENT_ID,
-            GUILD_ID
-        ),
-        {
-            body: commands
-        }
+        Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
+        { body: commands }
     );
 
-    console.log(
-        "✓ /stats зарегистрирована"
-    );
+    console.log("✓ /stats зарегистрирована");
 }
 
 // ==============================
 // COMMAND HANDLER
 // ==============================
 
-client.on(
-    "interactionCreate",
-    async interaction => {
+client.on("interactionCreate", async interaction => {
+    if (!interaction.isChatInputCommand()) return;
+    if (interaction.commandName !== "stats") return;
 
-        if (!interaction.isChatInputCommand()) {
-            return;
-        }
+    await interaction.deferReply();
 
-        if (interaction.commandName !== "stats") {
-            return;
-        }
+    const target = interaction.options.getUser("user") || interaction.user;
+    const data = getUser(target.id);
 
-        await interaction.deferReply();
+    const image = await generateCard(target, data);
 
-        const target =
-            interaction.options.getUser("user")
-            || interaction.user;
+    const attachment = new AttachmentBuilder(image, { name: "stats.png" });
 
-        const data =
-            getUser(target.id);
-
-        const image =
-            await generateCard(
-                target,
-                data
-            );
-
-        const attachment =
-            new AttachmentBuilder(
-                image,
-                {
-                    name: "stats.png"
-                }
-            );
-
-        await interaction.editReply({
-            files: [attachment]
-        });
-    }
-);
+    await interaction.editReply({ files: [attachment] });
+});
 
 // ==============================
 // READY
 // ==============================
 
-client.once(
-    "ready",
-    async () => {
+client.once("ready", async () => {
+    console.log(`✓ Бот запущен: ${client.user.tag}`);
 
-        console.log(
-            `✓ Бот запущен: ${client.user.tag}`
-        );
+    for (const guild of client.guilds.cache.values()) {
+        await guild.members.fetch();
 
-        for (
-            const guild
-            of client.guilds.cache.values()
-        ) {
+        for (const member of guild.members.cache.values()) {
+            if (member.user.bot) continue;
 
-            await guild.members.fetch();
+            const presence = member.presence;
+            const data = getUser(member.id);
 
-            for (
-                const member
-                of guild.members.cache.values()
-            ) {
+            if (presenceIsOnline(presence) && !data.discordStartedAt) {
+                data.discordStartedAt = Date.now();
+            }
 
-                if (member.user.bot) {
-                    continue;
-                }
+            const game = presence?.activities?.find(
+                activity => activity.type === ActivityType.Playing
+            );
 
-                const presence =
-                    member.presence;
+            if (game?.name && !data.gamingStartedAt) {
+                data.gamingGame = game.name;
+                data.gamingStartedAt = Date.now();
+            }
 
-                if (
-                    presenceIsOnline(
-                        presence
-                    )
-                ) {
-
-                    const data =
-                        getUser(member.id);
-
-                    if (
-                        !data.discordStartedAt
-                    ) {
-                        data.discordStartedAt =
-                            Date.now();
-                    }
-
-                    const game =
-                        presence.activities?.find(
-                            activity =>
-                                activity.type ===
-                                ActivityType.Playing
-                        );
-
-                    if (
-                        game?.name &&
-                        !data.gamingStartedAt
-                    ) {
-
-                        data.gamingGame =
-                            game.name;
-
-                        data.gamingStartedAt =
-                            Date.now();
+            for (const [channelId, channel] of guild.channels.cache) {
+                if (channel.isVoiceBased() && channel.members.has(member.id)) {
+                    if (!data.voiceStartedAt) {
+                        data.voiceStartedAt = Date.now();
                     }
                 }
             }
         }
-
-        saveStats();
     }
-);
+
+    saveStats();
+    console.log("✓ Активные сессии успешно восстановлены!");
+});
 
 // ==============================
 // START BOT
@@ -777,14 +506,9 @@ client.once(
 
 (async () => {
     try {
-
         await registerCommands();
-
         await client.login(TOKEN);
-
     } catch (error) {
-
         console.error(error);
-
     }
 })();
