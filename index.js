@@ -24,7 +24,6 @@ const commands = [
 client.once('ready', async () => {
     console.log(`Бот ${client.user.tag} запущен! Регистрируем слэш-команды...`);
 
-    // Автоматическая регистрация команд для вашего бота
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
     try {
         await rest.put(
