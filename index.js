@@ -1,5 +1,5 @@
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder } = require('discord.js');
-const { createCanvas, loadImage, registerFont } = require('@napi-rs/canvas');
+const { createCanvas, loadImage } = require('@napi-rs/canvas');
 const fs = require('fs');
 const path = require('path');
 
@@ -18,11 +18,11 @@ const HEIGHT = 1536;
 const POS = {
     username: { x: 768, y: 105 },
 
-    voice:   { x: 154,  y: 1250, color: "#ff4b4b" },
-    message: { x: 462,  y: 1250, color: "#55a8ff" },
-    discord: { x: 768,  y: 1250, color: "#c080ff" },
-    gaming:  { x: 1074, y: 1250, color: "#43ff91" },
-    music:   { x: 1382, y: 1250, color: "#ffd84a" }
+    voice:   { x: 154,  y: 1310, color: "#ff4b4b" },
+    message: { x: 462,  y: 1310, color: "#55a8ff" },
+    discord: { x: 768,  y: 1310, color: "#c080ff" },
+    gaming:  { x: 1074, y: 1310, color: "#43ff91" },
+    music:   { x: 1382, y: 1310, color: "#ffd84a" }
 };
 
 // Инициализация клиента с необходимыми интентсами
@@ -45,10 +45,6 @@ function loadStats() {
     return JSON.parse(fs.readFileSync(STATS_FILE, 'utf8'));
 }
 
-function saveStats(data) {
-    fs.writeFileSync(STATS_FILE, JSON.stringify(data, null, 2));
-}
-
 // Вспомогательные функции для расчета статистики
 function currentVoiceSeconds(data) {
     return data.voiceSeconds || 0;
@@ -62,6 +58,7 @@ function currentGamingSeconds(data) {
     return data.gamingSeconds || 0;
 }
 
+// Оригинальное форматирование времени (часы и минуты)
 function formatTime(totalSeconds) {
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
