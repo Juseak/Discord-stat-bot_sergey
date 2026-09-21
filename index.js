@@ -52,30 +52,58 @@ const client = new Client({
 });
 
 // ==============================
-// JSON STORAGE
+// JSON STORAGE & DAILY RESET
 // ==============================
+
+function getTodayDateString() {
+    const d = new Date();
+    return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+}
 
 function loadStats() {
     if (!fs.existsSync(STORAGE)) {
-        fs.writeFileSync(STORAGE, "{}");
+        fs.writeFileSync(STORAGE, JSON.stringify({ lastDate: getTodayDateString(), users: {} }, null, 2));
     }
 
     try {
-        return JSON.parse(fs.readFileSync(STORAGE, "utf8"));
+        const raw = JSON.parse(fs.readFileSync(STORAGE, "utf8"));
+        
+        // Поддержка старого формата, если файл уже существовал без обертки
+        let db = raw.users ? raw : { lastDate: getTodayDateString(), users: raw };
+
+        // Проверка смены дня (сброс ежедневной статистики)
+        const today = getTodayDateString();
+        if (db.lastDate !== today) {
+            for (let id in db.users) {
+                db.users[id].messages = 0;
+                db.users[id].voiceSeconds = 0;
+                db.users[id].discordSeconds = 0;
+                db.users[id].gamingSeconds = 0;
+                db.users[id].gamingGame = null;
+                // Сбрасываем счетчики сессий, чтобы они не уходили в минус или бесконечность
+                if (db.users[id].voiceStartedAt) db.users[id].voiceStartedAt = Date.now();
+                if (db.users[id].discordStartedAt) db.users[id].discordStartedAt = Date.now();
+                if (db.users[id].gamingStartedAt) db.users[id].gamingStartedAt = Date.now();
+            }
+            db.lastDate = today;
+        }
+
+        return db;
     } catch {
-        return {};
+        return { lastDate: getTodayDateString(), users: {} };
     }
 }
 
-let stats = loadStats();
+let db = loadStats();
 
 function saveStats() {
-    fs.writeFileSync(STORAGE, JSON.stringify(stats, null, 2));
+    db.lastDate = getTodayDateString();
+    fs.writeFileSync(STORAGE, JSON.stringify(db, null, 2));
 }
 
 function getUser(id) {
-    if (!stats[id]) {
-        stats[id] = {
+    if (!db.users[id]) {
+        db.users[id] = {
             messages: 0,
 
             voiceSeconds: 0,
@@ -90,7 +118,7 @@ function getUser(id) {
         };
     }
 
-    return stats[id];
+    return db.users[id];
 }
 
 // ==============================
@@ -442,7 +470,7 @@ function drawStatBadge(
         y,
         w - 24,
         "#ffffff",
-        42
+        36
     );
 }
 
@@ -498,7 +526,7 @@ async function generateCard(user, data) {
     );
 
     // ==========================
-    // STATISTICS
+    // STATISTICS (FOR TODAY)
     // ==========================
 
     const voice =
