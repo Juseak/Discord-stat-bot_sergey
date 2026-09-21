@@ -1,18 +1,14 @@
 {
-  "name": "discord-stats-card-bot",
+  "name": "discord-ai-bot",
   "version": "1.0.0",
-  "description": "Discord.js bot with OpenAI AI",
+  "description": "Discord bot with Gemini AI and user statistics",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "@napi-rs/canvas": "^0.1.68",
-    "discord.js": "^14.0.0",
-    "openai": "latest"
-  },
-  "packageManager": "npm@10.8.0",
-  "engines": {
-    "node": ">=20.0.0"
+    "@google/genai": "^1.29.0",
+    "@napi-rs/canvas": "^0.1.77",
+    "discord.js": "^14.24.2"
   }
 }
