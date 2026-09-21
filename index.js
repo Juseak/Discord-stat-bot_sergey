@@ -2,11 +2,9 @@ const { Client, GatewayIntentBits, SlashCommandBuilder, REST, Routes } = require
 const { GoogleGenAI } = require('@google/genai');
 const { createCanvas } = require('@napi-rs/canvas');
 
-// Инициализация клиента и нейросети
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
-// Описание слэш-команд
 const commands = [
     new SlashCommandBuilder()
         .setName('stats')
@@ -22,28 +20,20 @@ const commands = [
 ].map(command => command.toJSON());
 
 client.once('ready', async () => {
-    console.log(`Бот ${client.user.tag} запущен! Регистрируем слэш-команды...`);
-
+    console.log(`Бот ${client.user.tag} запущен!`);
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
     try {
-        await rest.put(
-            Routes.applicationCommands(client.user.id),
-            { body: commands },
-        );
-        console.log('Слэш-команды успешно зарегистрированы!');
+        await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+        console.log('Команды зарегистрированы.');
     } catch (error) {
         console.error('Ошибка регистрации команд:', error);
     }
 });
 
-// Обработка выполнения слэш-команд
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
-    const { commandName } = interaction;
-
-    // 1. Команда /stats с картинкой
-    if (commandName === 'stats') {
+    if (interaction.commandName === 'stats') {
         await interaction.deferReply();
         try {
             const canvas = createCanvas(700, 250);
@@ -74,16 +64,14 @@ client.on('interactionCreate', async interaction => {
             console.error('Ошибка генерации статистики:', error);
             await interaction.editReply('Не удалось создать карточку статистики.');
         }
-    }
-
-    // 2. Команда /ai с вопросом нейросети
-    else if (commandName === 'ai') {
+    } 
+    else if (interaction.commandName === 'ai') {
         const promptText = interaction.options.getString('prompt');
         await interaction.deferReply();
 
         try {
             const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
+                model: 'gemini-1.5-flash',
                 contents: promptText,
             });
 
@@ -95,7 +83,7 @@ client.on('interactionCreate', async interaction => {
                 await interaction.editReply(replyText);
             }
         } catch (error) {
-            console.error('Ошибка при обращении к Gemini API:', error);
+            console.error('Ошибка Gemini API:', error);
             await interaction.editReply('Произошла ошибка при запросе к нейросети.');
         }
     }
