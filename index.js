@@ -27,17 +27,17 @@ const WIDTH = 1536;
 const HEIGHT = 1536;
 
 // ==============================
-// TEXT POSITIONS
+// TEXT POSITIONS & COLORS
 // ==============================
 
 const POS = {
     username: { x: 768, y: 105 },
 
-    voice:   { x: 154,  y: 1350, color: "#ff4b4b" },
-    message: { x: 461,  y: 1350, color: "#55a8ff" },
-    discord: { x: 768,  y: 1350, color: "#c080ff" },
-    gaming:  { x: 1075, y: 1350, color: "#43ff91" },
-    music:   { x: 1382, y: 1350, color: "#ffd84a" }
+    voice:   { x: 154,  y: 1350, color: "#ff4b4b" }, // Красный
+    message: { x: 461,  y: 1350, color: "#55a8ff" }, // Синий
+    discord: { x: 768,  y: 1350, color: "#c080ff" }, // Фиолетовый
+    gaming:  { x: 1075, y: 1350, color: "#43ff91" }, // Зеленый
+    music:   { x: 1382, y: 1350, color: "#ffd84a" }  // Желтый
 };
 
 const client = new Client({
@@ -171,7 +171,8 @@ function finalizeGaming(data) {
 // ==============================
 
 client.on("messageCreate", message => {
-    if (!message.guild || message.author.bot) return;
+    // Безопасная проверка на ботов и отсутствие гильдии
+    if (!message.guild || !message.author || message.author.bot) return;
 
     const data = getUser(message.author.id);
     data.messages = (data.messages || 0) + 1;
@@ -183,7 +184,8 @@ client.on("messageCreate", message => {
 // ==============================
 
 client.on("voiceStateUpdate", (oldState, newState) => {
-    if (newState.member?.user?.bot) return;
+    // Безопасная проверка (если участник не загрузился в кеш)
+    if (!newState.member || newState.member.user.bot) return;
 
     const data = getUser(newState.id);
 
@@ -205,10 +207,8 @@ client.on("voiceStateUpdate", (oldState, newState) => {
 // ==============================
 
 client.on("presenceUpdate", (oldPresence, newPresence) => {
-    if (!newPresence?.userId) return;
-
-    const member = newPresence.member;
-    if (member?.user?.bot) return;
+    if (!newPresence?.userId || !newPresence.member) return;
+    if (newPresence.member.user.bot) return;
 
     const data = getUser(newPresence.userId);
 
@@ -249,10 +249,8 @@ function presenceIsOnline(presence) {
 }
 
 client.on("presenceUpdate", (oldPresence, newPresence) => {
-    if (!newPresence?.userId) return;
-
-    const member = newPresence.member;
-    if (member?.user?.bot) return;
+    if (!newPresence?.userId || !newPresence.member) return;
+    if (newPresence.member.user.bot) return;
 
     const data = getUser(newPresence.userId);
     const online = presenceIsOnline(newPresence);
@@ -280,65 +278,70 @@ setInterval(() => {
 // IMAGE HELPERS
 // ==============================
 
-function roundedRect(ctx, x, y, w, h, r) {
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.lineTo(x + w - r, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-    ctx.lineTo(x + w, y + h - r);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-    ctx.lineTo(x + r, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-    ctx.lineTo(x, y + r);
-    ctx.quadraticCurveTo(x, y, x + r, y);
-    ctx.closePath();
-}
-
 function drawCentered(ctx, text, x, y, maxWidth, color, size) {
+    ctx.save();
     ctx.font = `bold ${size}px sans-serif`;
     ctx.fillStyle = color;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
-    ctx.shadowColor = "rgba(0,0,0,0.75)";
-    ctx.shadowBlur = 8;
-    ctx.shadowOffsetY = 3;
+    // Мощная тень для имени пользователя
+    ctx.shadowColor = "rgba(0, 0, 0, 0.9)";
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetY = 4;
 
-    ctx.fillText(text, x, y);
-
-    ctx.shadowColor = "transparent";
-    ctx.shadowBlur = 0;
-    ctx.shadowOffsetY = 0;
+    ctx.fillText(text, x, y, maxWidth);
+    ctx.restore();
 }
 
 // ==============================
-// STATISTIC BADGE
+// STATISTIC BADGE (СОВРЕМЕННЫЙ ДИЗАЙН)
 // ==============================
 
 function drawStatBadge(ctx, x, y, w, h, value, color) {
-    ctx.fillStyle = "rgba(10, 10, 10, 0.85)";
+    ctx.save(); // Сохраняем состояние канваса, чтобы стили не смешивались
+    
+    const rx = x - w / 2;
+    const ry = y - h / 2;
+    const radius = 20; // Более плавные, "модные" края
+
+    // 1. Создаем эффект неонового свечения для плашки
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 12;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 0;
+
+    // 2. Рисуем темный фон плашки
+    ctx.fillStyle = "rgba(12, 12, 12, 0.9)"; // Почти черный, слегка прозрачный
     ctx.beginPath();
-    ctx.roundRect(x - w / 2, y - h / 2, w, h, 16);
+    ctx.roundRect(rx, ry, w, h, radius);
     ctx.fill();
 
+    // 3. Отключаем свечение, чтобы обводка была четкой
+    ctx.shadowBlur = 0;
+
+    // 4. Рисуем цветную рамку
     ctx.strokeStyle = color;
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.roundRect(rx, ry, w, h, radius);
     ctx.stroke();
 
-    ctx.font = "bold 24px sans-serif";
+    // 5. Настраиваем шрифт и тень для текста
+    ctx.font = "bold 26px sans-serif";
     ctx.fillStyle = "#FFFFFF";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
-    ctx.shadowColor = "rgba(0,0,0,0.8)";
-    ctx.shadowBlur = 6;
+    // Четкая черная тень под текстом для идеальной читаемости
+    ctx.shadowColor = "rgba(0, 0, 0, 1)";
+    ctx.shadowBlur = 4;
     ctx.shadowOffsetY = 2;
 
+    // Выводим текст
     ctx.fillText(String(value), x, y);
 
-    ctx.shadowColor = "transparent";
-    ctx.shadowBlur = 0;
-    ctx.shadowOffsetY = 0;
+    ctx.restore(); // Сбрасываем все тени и шрифты в исходное состояние
 }
 
 // ==============================
@@ -349,32 +352,38 @@ async function generateCard(user, data) {
     const canvas = createCanvas(WIDTH, HEIGHT);
     const ctx = canvas.getContext("2d");
 
+    // Читаем фоновую картинку
     const template = await loadImage(
         await fs.promises.readFile(TEMPLATE)
     );
-
     ctx.drawImage(template, 0, 0, WIDTH, HEIGHT);
 
     // ==========================
-    // USERNAME
+    // USERNAME BACKGROUND
     // ==========================
-
-    ctx.fillStyle = "rgba(0,0,0,0.38)";
-    roundedRect(ctx, 470, 35, 600, 90, 30);
+    ctx.save();
+    ctx.fillStyle = "rgba(10, 10, 10, 0.6)";
+    ctx.beginPath();
+    // Используем встроенный roundRect для подложки под ник
+    ctx.roundRect(470, 35, 600, 90, 25);
     ctx.fill();
+    ctx.restore();
 
+    // ==========================
+    // USERNAME TEXT
+    // ==========================
     drawCentered(
         ctx,
         user.username,
         POS.username.x,
         POS.username.y - 5,
-        550,
+        550, // Максимальная ширина, чтобы длинные ники сжимались
         "#ffffff",
         48
     );
 
     // ==========================
-    // STATISTICS
+    // CALCULATE STATISTICS
     // ==========================
 
     const voiceSec = currentVoiceSeconds(data);
@@ -393,13 +402,14 @@ async function generateCard(user, data) {
         : (activeGamingSec > 0 ? gamingTime : "0m");
 
     // ==========================
-    // STATISTIC POSITIONS
+    // DRAW STATISTIC BADGES
     // ==========================
 
     drawStatBadge(ctx, POS.voice.x, POS.voice.y, 250, 64, voice, POS.voice.color);
     drawStatBadge(ctx, POS.message.x, POS.message.y, 250, 64, messages, POS.message.color);
     drawStatBadge(ctx, POS.discord.x, POS.discord.y, 250, 64, discord, POS.discord.color);
-    drawStatBadge(ctx, POS.gaming.x, POS.gaming.y, 280, 64, gamingText, POS.gaming.color);
+    // Плашка с игрой сделана чуть шире (300px), чтобы помещалось название
+    drawStatBadge(ctx, POS.gaming.x, POS.gaming.y, 300, 64, gamingText, POS.gaming.color);
     drawStatBadge(ctx, POS.music.x, POS.music.y, 250, 64, "SOON", POS.music.color);
 
     return canvas.toBuffer("image/png");
@@ -449,11 +459,14 @@ client.on("interactionCreate", async interaction => {
     const target = interaction.options.getUser("user") || interaction.user;
     const data = getUser(target.id);
 
-    const image = await generateCard(target, data);
-
-    const attachment = new AttachmentBuilder(image, { name: "stats.png" });
-
-    await interaction.editReply({ files: [attachment] });
+    try {
+        const image = await generateCard(target, data);
+        const attachment = new AttachmentBuilder(image, { name: "stats.png" });
+        await interaction.editReply({ files: [attachment] });
+    } catch (error) {
+        console.error("Ошибка при генерации карточки:", error);
+        await interaction.editReply("Произошла ошибка при создании картинки.");
+    }
 });
 
 // ==============================
@@ -508,6 +521,6 @@ client.once("ready", async () => {
         await registerCommands();
         await client.login(TOKEN);
     } catch (error) {
-        console.error(error);
+        console.error("Ошибка запуска:", error);
     }
 })();
