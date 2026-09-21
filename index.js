@@ -133,35 +133,35 @@ function formatTime(seconds) {
 }
 
 function currentVoiceSeconds(data) {
-    if (!data.voiceStartedAt) return data.voiceSeconds;
-    return data.voiceSeconds + Math.floor((Date.now() - data.voiceStartedAt) / 1000);
+    if (!data.voiceStartedAt) return data.voiceSeconds || 0;
+    return (data.voiceSeconds || 0) + Math.floor((Date.now() - data.voiceStartedAt) / 1000);
 }
 
 function currentDiscordSeconds(data) {
-    if (!data.discordStartedAt) return data.discordSeconds;
-    return data.discordSeconds + Math.floor((Date.now() - data.discordStartedAt) / 1000);
+    if (!data.discordStartedAt) return data.discordSeconds || 0;
+    return (data.discordSeconds || 0) + Math.floor((Date.now() - data.discordStartedAt) / 1000);
 }
 
 function currentGamingSeconds(data) {
-    if (!data.gamingStartedAt) return data.gamingSeconds;
-    return data.gamingSeconds + Math.floor((Date.now() - data.gamingStartedAt) / 1000);
+    if (!data.gamingStartedAt) return data.gamingSeconds || 0;
+    return (data.gamingSeconds || 0) + Math.floor((Date.now() - data.gamingStartedAt) / 1000);
 }
 
 function finalizeVoice(data) {
     if (!data.voiceStartedAt) return;
-    data.voiceSeconds += Math.floor((Date.now() - data.voiceStartedAt) / 1000);
+    data.voiceSeconds = (data.voiceSeconds || 0) + Math.floor((Date.now() - data.voiceStartedAt) / 1000);
     data.voiceStartedAt = null;
 }
 
 function finalizeDiscord(data) {
     if (!data.discordStartedAt) return;
-    data.discordSeconds += Math.floor((Date.now() - data.discordStartedAt) / 1000);
+    data.discordSeconds = (data.discordSeconds || 0) + Math.floor((Date.now() - data.discordStartedAt) / 1000);
     data.discordStartedAt = null;
 }
 
 function finalizeGaming(data) {
     if (!data.gamingStartedAt) return;
-    data.gamingSeconds += Math.floor((Date.now() - data.gamingStartedAt) / 1000);
+    data.gamingSeconds = (data.gamingSeconds || 0) + Math.floor((Date.now() - data.gamingStartedAt) / 1000);
     data.gamingStartedAt = null;
     data.gamingGame = null;
 }
@@ -174,7 +174,7 @@ client.on("messageCreate", message => {
     if (!message.guild || message.author.bot) return;
 
     const data = getUser(message.author.id);
-    data.messages++;
+    data.messages = (data.messages || 0) + 1;
     saveStats();
 });
 
@@ -296,7 +296,7 @@ function roundedRect(ctx, x, y, w, h, r) {
 
 function fitFont(ctx, text, maxWidth, startSize, family = "Arial") {
     let size = startSize;
-    while (size > 16) {
+    while (size > 14) {
         ctx.font = `bold ${size}px ${family}`;
         if (ctx.measureText(text).width <= maxWidth) {
             return size;
@@ -343,7 +343,7 @@ function drawStatBadge(ctx, x, y, w, h, value, color) {
 
     ctx.restore();
 
-    drawCentered(ctx, value, x, y, w - 24, "#ffffff", 36);
+    drawCentered(ctx, value, x, y, w - 24, "#ffffff", 34);
 }
 
 // ==============================
@@ -382,9 +382,13 @@ async function generateCard(user, data) {
     // STATISTICS
     // ==========================
 
-    const voice = formatTime(currentVoiceSeconds(data));
-    const messages = String(data.messages);
-    const discord = formatTime(currentDiscordSeconds(data));
+    const voiceSec = currentVoiceSeconds(data);
+    const voice = voiceSec > 0 ? formatTime(voiceSec) : "0m";
+
+    const messages = String(data.messages || 0);
+
+    const discordSec = currentDiscordSeconds(data);
+    const discord = discordSec > 0 ? formatTime(discordSec) : "0m";
     
     const activeGamingSec = currentGamingSeconds(data);
     const gamingTime = formatTime(activeGamingSec);
