@@ -1,7 +1,7 @@
 {
   "name": "discord-stats-card-bot",
   "version": "1.0.0",
-  "description": "Discord.js bot that tracks stats",
+  "description": "Discord.js bot with Gemini AI",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
