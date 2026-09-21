@@ -328,7 +328,7 @@ async function generateCard(user, data) {
     const canvas = createCanvas(WIDTH, HEIGHT);
     const ctx = canvas.getContext("2d");
 
-    const template = await loadImage(TEMPLATE);
+    const template = await loadImage(await fs.promises.readFile(TEMPLATE));
     ctx.drawImage(template, 0, 0, WIDTH, HEIGHT);
 
     // Username in the sky at the top.
