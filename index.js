@@ -93,6 +93,7 @@ const statsPath = path.join(__dirname, "stats.json");
 const templatePath = path.join(__dirname, "template.png");
 const fontPath = path.join(__dirname, "font.ttf");
 const soundsPath = path.join(__dirname, "sounds");
+const convertedSoundsPath = path.join(__dirname, "sounds", "converted");
 
 // ============================================================
 // SOUNDS FOLDER
@@ -106,6 +107,15 @@ if (!fs.existsSync(soundsPath)) {
   console.log("📁 Создана папка sounds");
 }
 
+// Папка для временных WAV-файлов
+if (!fs.existsSync(convertedSoundsPath)) {
+  fs.mkdirSync(convertedSoundsPath, {
+    recursive: true,
+  });
+
+  console.log("📁 Создана папка sounds/converted");
+}
+
 // ============================================================
 // VOICE PLAYER
 // ============================================================
@@ -116,6 +126,13 @@ function getSoundPath(number) {
   return path.join(
     soundsPath,
     `${number}.mp3`
+  );
+}
+
+function getConvertedSoundPath(number) {
+  return path.join(
+    convertedSoundsPath,
+    `${number}.wav`
   );
 }
 
@@ -205,10 +222,10 @@ function waitForVoiceReady(connection) {
 }
 
 // ============================================================
-// CREATE PCM STREAM FROM AUDIO
+// CONVERT MP3 -> WAV
 // ============================================================
 
-function createPcmStreamFromMp3(filePath) {
+function convertMp3ToWav(filePath, outputPath) {
   return new Promise((resolve, reject) => {
     if (!ffmpegPath) {
       reject(
@@ -223,7 +240,7 @@ function createPcmStreamFromMp3(filePath) {
     if (!fs.existsSync(filePath)) {
       reject(
         new Error(
-          `Файл не найден: ${filePath}`
+          `Исходный файл не найден: ${filePath}`
         )
       );
 
@@ -234,21 +251,33 @@ function createPcmStreamFromMp3(filePath) {
       fs.statSync(filePath).size;
 
     console.log(
-      `📦 Размер файла: ${fileSize} байт`
+      `📦 Исходный файл: ${fileSize} байт`
     );
 
     if (fileSize === 0) {
       reject(
         new Error(
-          "MP3-файл пустой."
+          "Исходный MP3-файл пустой."
         )
       );
 
       return;
     }
 
+    // Если старый WAV существует — удаляем
+    try {
+      if (fs.existsSync(outputPath)) {
+        fs.unlinkSync(outputPath);
+      }
+    } catch (error) {
+      console.error(
+        "⚠️ Не удалось удалить старый WAV:",
+        error
+      );
+    }
+
     console.log(
-      `🎵 FFmpeg запускается: ${filePath}`
+      `🔄 Конвертирую ${path.basename(filePath)} → ${path.basename(outputPath)}`
     );
 
     const ffmpeg = spawn(
@@ -256,18 +285,177 @@ function createPcmStreamFromMp3(filePath) {
       [
         "-hide_banner",
 
-        // Подробная диагностика
         "-loglevel",
         "error",
 
-        // Принудительно читаем файл как вход
+        // Больше времени на анализ необычных файлов
+        "-probesize",
+        "50M",
+
+        "-analyzeduration",
+        "100M",
+
         "-i",
         filePath,
 
-        // Только аудио
+        // Берём первый аудиопоток
+        "-map",
+        "0:a:0",
+
         "-vn",
 
-        // Discord PCM
+        // Нормальный WAV для дальнейшего чтения
+        "-ac",
+        "2",
+
+        "-ar",
+        "48000",
+
+        "-c:a",
+        "pcm_s16le",
+
+        "-y",
+
+        outputPath,
+      ],
+      {
+        stdio: [
+          "ignore",
+          "ignore",
+          "pipe",
+        ],
+      }
+    );
+
+    let stderr = "";
+
+    ffmpeg.stderr.on(
+      "data",
+      (chunk) => {
+        const text = chunk.toString();
+
+        stderr += text;
+
+        console.error(
+          `FFmpeg: ${text.trim()}`
+        );
+      }
+    );
+
+    ffmpeg.on(
+      "error",
+      (error) => {
+        reject(
+          new Error(
+            `Ошибка запуска FFmpeg: ${error.message}`
+          )
+        );
+      }
+    );
+
+    ffmpeg.on(
+      "close",
+      (code) => {
+        console.log(
+          `🔄 Конвертация завершена. Код: ${code}`
+        );
+
+        if (
+          code !== 0 &&
+          code !== null
+        ) {
+          reject(
+            new Error(
+              `Не удалось конвертировать MP3 в WAV. Код FFmpeg: ${code}${
+                stderr.trim()
+                  ? `\n${stderr.trim()}`
+                  : ""
+              }`
+            )
+          );
+
+          return;
+        }
+
+        if (!fs.existsSync(outputPath)) {
+          reject(
+            new Error(
+              "FFmpeg завершился без ошибки, но WAV-файл не был создан."
+            )
+          );
+
+          return;
+        }
+
+        const outputSize =
+          fs.statSync(outputPath).size;
+
+        console.log(
+          `✓ WAV создан: ${outputSize} байт`
+        );
+
+        if (outputSize < 100) {
+          reject(
+            new Error(
+              "Созданный WAV-файл слишком маленький."
+            )
+          );
+
+          return;
+        }
+
+        resolve(outputPath);
+      }
+    );
+  });
+}
+
+// ============================================================
+// CREATE PCM STREAM FROM WAV
+// ============================================================
+
+function createPcmStreamFromWav(filePath) {
+  return new Promise((resolve, reject) => {
+    if (!ffmpegPath) {
+      reject(
+        new Error(
+          "FFmpeg не найден."
+        )
+      );
+
+      return;
+    }
+
+    if (!fs.existsSync(filePath)) {
+      reject(
+        new Error(
+          `WAV-файл не найден: ${filePath}`
+        )
+      );
+
+      return;
+    }
+
+    console.log(
+      `🎵 Читаю WAV: ${filePath}`
+    );
+
+    const ffmpeg = spawn(
+      ffmpegPath,
+      [
+        "-hide_banner",
+
+        "-loglevel",
+        "error",
+
+        "-i",
+        filePath,
+
+        "-map",
+        "0:a:0",
+
+        "-vn",
+
         "-f",
         "s16le",
 
@@ -298,7 +486,7 @@ function createPcmStreamFromMp3(filePath) {
         stderr += text;
 
         console.error(
-          `FFmpeg: ${text.trim()}`
+          `FFmpeg WAV: ${text.trim()}`
         );
       }
     );
@@ -307,11 +495,9 @@ function createPcmStreamFromMp3(filePath) {
       "error",
       (error) => {
         console.error(
-          "❌ FFmpeg process error:",
+          "❌ Ошибка процесса FFmpeg:",
           error
         );
-
-        reject(error);
       }
     );
 
@@ -319,7 +505,7 @@ function createPcmStreamFromMp3(filePath) {
       "close",
       (code) => {
         console.log(
-          `🎵 FFmpeg завершён. Код: ${code}`
+          `🎵 FFmpeg WAV завершён. Код: ${code}`
         );
 
         if (
@@ -327,10 +513,7 @@ function createPcmStreamFromMp3(filePath) {
           code !== null
         ) {
           console.error(
-            "❌ FFmpeg stderr:"
-          );
-
-          console.error(
+            "❌ FFmpeg WAV stderr:",
             stderr || "(пусто)"
           );
         }
@@ -345,7 +528,7 @@ function createPcmStreamFromMp3(filePath) {
 }
 
 // ============================================================
-// PLAY MP3
+// PLAY SOUND
 // ============================================================
 
 async function playSound(number) {
@@ -355,10 +538,10 @@ async function playSound(number) {
     );
   }
 
-  const filePath =
+  const mp3Path =
     getSoundPath(number);
 
-  if (!fs.existsSync(filePath)) {
+  if (!fs.existsSync(mp3Path)) {
     throw new Error(
       `Файл ${number}.mp3 не найден.`
     );
@@ -384,12 +567,28 @@ async function playSound(number) {
     } catch {}
   }
 
+  // ==========================================================
+  // MP3 -> WAV
+  // ==========================================================
+
+  const wavPath =
+    getConvertedSoundPath(number);
+
+  await convertMp3ToWav(
+    mp3Path,
+    wavPath
+  );
+
+  // ==========================================================
+  // WAV -> PCM
+  // ==========================================================
+
   const {
     stream,
     ffmpeg,
   } =
-    await createPcmStreamFromMp3(
-      filePath
+    await createPcmStreamFromWav(
+      wavPath
     );
 
   voiceSession.ffmpeg =
@@ -418,6 +617,9 @@ async function playSound(number) {
   return new Promise(
     (resolve, reject) => {
       let finished = false;
+
+      let ffmpegClosed = false;
+      let ffmpegExitCode = null;
 
       const cleanup = () => {
         voiceSession?.player?.removeListener(
@@ -491,13 +693,21 @@ async function playSound(number) {
       };
 
       const onIdle = () => {
-        /*
-         * Idle сам по себе не означает,
-         * что FFmpeg успешно обработал файл.
-         *
-         * Поэтому просто завершаем успешно,
-         * если FFmpeg не сообщил об ошибке.
-         */
+        // Если FFmpeg уже завершился с ошибкой,
+        // не считаем воспроизведение успешным.
+        if (
+          ffmpegClosed &&
+          ffmpegExitCode !== 0 &&
+          ffmpegExitCode !== null
+        ) {
+          finishError(
+            new Error(
+              `FFmpeg не смог прочитать WAV-файл. Код: ${ffmpegExitCode}`
+            )
+          );
+
+          return;
+        }
 
         finishSuccess();
       };
@@ -521,13 +731,16 @@ async function playSound(number) {
       const onFfmpegClose = (
         code
       ) => {
+        ffmpegClosed = true;
+        ffmpegExitCode = code;
+
         if (
           code !== 0 &&
           code !== null
         ) {
           finishError(
             new Error(
-              `FFmpeg не смог обработать ${number}.mp3. Код: ${code}`
+              `FFmpeg не смог обработать WAV-файл. Код: ${code}`
             )
           );
         }
@@ -1986,13 +2199,16 @@ client.on(
 
         await interaction.deferReply();
 
-        // Подключаемся
+        // ====================================================
+        // ПОДКЛЮЧЕНИЕ
+        // ====================================================
+
         await connectToVoice(
           channel
         );
 
         // ====================================================
-        // РОВНО 3 СЕКУНДЫ ПОСЛЕ ПОДКЛЮЧЕНИЯ
+        // РОВНО 3 СЕКУНДЫ
         // ====================================================
 
         console.log(
@@ -2012,7 +2228,7 @@ client.on(
         );
 
         // ====================================================
-        // ПРОИГРЫВАЕМ
+        // КОНВЕРТАЦИЯ + ВОСПРОИЗВЕДЕНИЕ
         // ====================================================
 
         await playSound(
@@ -2020,7 +2236,7 @@ client.on(
         );
 
         // ====================================================
-        // УСПЕШНО ЗАКОНЧИЛ
+        // УСПЕШНО
         // ====================================================
 
         await interaction.editReply(
@@ -2028,7 +2244,7 @@ client.on(
         );
 
         // ====================================================
-        // ВЫХОДИМ ИЗ VOICE
+        // ОТКЛЮЧЕНИЕ
         // ====================================================
 
         console.log(
