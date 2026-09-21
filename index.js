@@ -25,7 +25,6 @@ const {
 
 const { spawn } = require("child_process");
 const ffmpegPath = require("ffmpeg-static");
-const { Readable } = require("stream");
 
 const fs = require("fs");
 const path = require("path");
@@ -88,30 +87,28 @@ const gemini = new GoogleGenAI({
 const AI_MODEL = "gemini-3.5-flash-lite";
 
 // ============================================================
-// STATS
+// PATHS
 // ============================================================
 
 const statsPath = path.join(__dirname, "stats.json");
 const templatePath = path.join(__dirname, "template.png");
 const fontPath = path.join(__dirname, "font.ttf");
 
-// ============================================================
-// SOUNDS
-// ============================================================
-
 const soundsPath = path.join(
   __dirname,
   "sounds"
 );
+
+// ============================================================
+// SOUNDS FOLDER
+// ============================================================
 
 if (!fs.existsSync(soundsPath)) {
   fs.mkdirSync(soundsPath, {
     recursive: true,
   });
 
-  console.log(
-    "📁 Создана папка sounds"
-  );
+  console.log("📁 Создана папка sounds");
 }
 
 // ============================================================
@@ -121,12 +118,10 @@ if (!fs.existsSync(soundsPath)) {
 let voiceSession = null;
 
 function getSoundPath(number) {
-  const filePath = path.join(
+  return path.join(
     soundsPath,
     `${number}.mp3`
   );
-
-  return filePath;
 }
 
 function getAvailableSounds() {
@@ -161,86 +156,175 @@ function getAvailableSounds() {
 }
 
 // ============================================================
+// WAIT FOR VOICE READY
+// ============================================================
+
+function waitForVoiceReady(connection) {
+  return new Promise((resolve, reject) => {
+    if (
+      connection.state.status ===
+      VoiceConnectionStatus.Ready
+    ) {
+      resolve();
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      cleanup();
+
+      reject(
+        new Error(
+          "Discord не установил голосовое соединение за 15 секунд."
+        )
+      );
+    }, 15000);
+
+    const onReady = () => {
+      cleanup();
+      resolve();
+    };
+
+    const onError = (error) => {
+      cleanup();
+      reject(error);
+    };
+
+    function cleanup() {
+      clearTimeout(timeout);
+
+      connection.removeListener(
+        VoiceConnectionStatus.Ready,
+        onReady
+      );
+
+      connection.removeListener(
+        "error",
+        onError
+      );
+    }
+
+    connection.once(
+      VoiceConnectionStatus.Ready,
+      onReady
+    );
+
+    connection.once(
+      "error",
+      onError
+    );
+  });
+}
+
+// ============================================================
+// CREATE PCM STREAM FROM MP3
+// ============================================================
+
+function createPcmStreamFromMp3(filePath) {
+  return new Promise((resolve, reject) => {
+    if (!ffmpegPath) {
+      reject(
+        new Error(
+          "FFmpeg не найден."
+        )
+      );
+
+      return;
+    }
+
+    console.log(
+      `🎵 FFmpeg запускается: ${filePath}`
+    );
+
+    const ffmpeg = spawn(
+      ffmpegPath,
+      [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+
+        "-i",
+        filePath,
+
+        "-vn",
+
+        "-f",
+        "s16le",
+
+        "-ar",
+        "48000",
+
+        "-ac",
+        "2",
+
+        "pipe:1",
+      ],
+      {
+        stdio: [
+          "ignore",
+          "pipe",
+          "pipe",
+        ],
+      }
+    );
+
+    let stderr = "";
+
+    ffmpeg.stderr.on(
+      "data",
+      (chunk) => {
+        const text = chunk.toString();
+
+        stderr += text;
+
+        console.error(
+          `FFmpeg: ${text.trim()}`
+        );
+      }
+    );
+
+    ffmpeg.on(
+      "error",
+      (error) => {
+        console.error(
+          "❌ FFmpeg process error:",
+          error
+        );
+
+        reject(error);
+      }
+    );
+
+    ffmpeg.on(
+      "close",
+      (code) => {
+        console.log(
+          `🎵 FFmpeg завершён. Код: ${code}`
+        );
+
+        if (
+          code !== 0 &&
+          code !== null
+        ) {
+          console.error(
+            "❌ FFmpeg stderr:",
+            stderr
+          );
+        }
+      }
+    );
+
+    resolve({
+      stream: ffmpeg.stdout,
+      ffmpeg,
+    });
+  });
+}
+
+// ============================================================
 // PLAY MP3
 // ============================================================
 
-function createPcmStreamFromMp3(
-  filePath
-) {
-  return new Promise(
-    (resolve, reject) => {
-      const ffmpeg = spawn(
-        ffmpegPath,
-        [
-          "-hide_banner",
-          "-loglevel",
-          "error",
-
-          "-i",
-          filePath,
-
-          "-f",
-          "s16le",
-
-          "-ar",
-          "48000",
-
-          "-ac",
-          "2",
-
-          "pipe:1",
-        ],
-        {
-          stdio: [
-            "ignore",
-            "pipe",
-            "pipe",
-          ],
-        }
-      );
-
-      let stderr = "";
-
-      ffmpeg.stderr.on(
-        "data",
-        (chunk) => {
-          stderr += chunk.toString();
-        }
-      );
-
-      ffmpeg.on(
-        "error",
-        (error) => {
-          reject(error);
-        }
-      );
-
-      ffmpeg.on(
-        "close",
-        (code) => {
-          if (
-            code !== 0 &&
-            code !== null
-          ) {
-            reject(
-              new Error(
-                `FFmpeg error: ${stderr || `код ${code}`}`
-              )
-            );
-          }
-        }
-      );
-
-      resolve(
-        ffmpeg.stdout
-      );
-    }
-  );
-}
-
-async function playSound(
-  number
-) {
+async function playSound(number) {
   if (!voiceSession) {
     throw new Error(
       "Бот не подключён к голосовому каналу."
@@ -257,20 +341,39 @@ async function playSound(
   }
 
   console.log(
-    `🔊 Запускаю sound/${number}.mp3`
+    `🔊 Готовлю ${number}.mp3 к воспроизведению...`
   );
 
   // Останавливаем предыдущий звук
-  voiceSession.player.stop();
+  if (voiceSession.player) {
+    voiceSession.player.stop(true);
+  }
 
-  const pcmStream =
+  if (
+    voiceSession.ffmpeg &&
+    !voiceSession.ffmpeg.killed
+  ) {
+    try {
+      voiceSession.ffmpeg.kill(
+        "SIGKILL"
+      );
+    } catch {}
+  }
+
+  const {
+    stream,
+    ffmpeg,
+  } =
     await createPcmStreamFromMp3(
       filePath
     );
 
+  voiceSession.ffmpeg =
+    ffmpeg;
+
   const resource =
     createAudioResource(
-      pcmStream,
+      stream,
       {
         inputType:
           StreamType.Raw,
@@ -280,36 +383,19 @@ async function playSound(
   voiceSession.currentSound =
     number;
 
+  console.log(
+    `▶️ Начинаю воспроизведение ${number}.mp3`
+  );
+
   voiceSession.player.play(
     resource
   );
 
   return new Promise(
     (resolve, reject) => {
-      const onIdle =
-        () => {
-          cleanup();
+      let finished = false;
 
-          console.log(
-            `✓ sound/${number}.mp3 закончил воспроизведение`
-          );
-
-          resolve();
-        };
-
-      const onError =
-        (error) => {
-          cleanup();
-
-          console.error(
-            "❌ Ошибка проигрывания:",
-            error
-          );
-
-          reject(error);
-        };
-
-      function cleanup() {
+      const cleanup = () => {
         voiceSession?.player?.removeListener(
           AudioPlayerStatus.Idle,
           onIdle
@@ -319,7 +405,56 @@ async function playSound(
           "error",
           onError
         );
-      }
+      };
+
+      const onIdle = () => {
+        if (finished) {
+          return;
+        }
+
+        finished = true;
+
+        cleanup();
+
+        console.log(
+          `✓ ${number}.mp3 закончил воспроизведение`
+        );
+
+        if (
+          voiceSession?.ffmpeg ===
+          ffmpeg
+        ) {
+          voiceSession.ffmpeg =
+            null;
+        }
+
+        resolve();
+      };
+
+      const onError = (error) => {
+        if (finished) {
+          return;
+        }
+
+        finished = true;
+
+        cleanup();
+
+        console.error(
+          "❌ Audio Player error:",
+          error
+        );
+
+        if (
+          voiceSession?.ffmpeg ===
+          ffmpeg
+        ) {
+          voiceSession.ffmpeg =
+            null;
+        }
+
+        reject(error);
+      };
 
       voiceSession.player.once(
         AudioPlayerStatus.Idle,
@@ -344,7 +479,9 @@ function stopSound() {
   }
 
   try {
-    voiceSession.player.stop();
+    if (voiceSession.player) {
+      voiceSession.player.stop(true);
+    }
 
     if (
       voiceSession.ffmpeg &&
@@ -364,6 +501,9 @@ function stopSound() {
   voiceSession.currentSound =
     null;
 
+  voiceSession.ffmpeg =
+    null;
+
   return true;
 }
 
@@ -377,9 +517,22 @@ function disconnectVoice() {
   }
 
   try {
-    voiceSession.player.stop();
+    if (voiceSession.player) {
+      voiceSession.player.stop(true);
+    }
 
-    voiceSession.connection.destroy();
+    if (
+      voiceSession.ffmpeg &&
+      !voiceSession.ffmpeg.killed
+    ) {
+      voiceSession.ffmpeg.kill(
+        "SIGKILL"
+      );
+    }
+
+    if (voiceSession.connection) {
+      voiceSession.connection.destroy();
+    }
   } catch (error) {
     console.error(
       "❌ Ошибка отключения:",
@@ -400,15 +553,17 @@ function disconnectVoice() {
 // CONNECT VOICE
 // ============================================================
 
-async function connectToVoice(
-  channel
-) {
+async function connectToVoice(channel) {
   if (voiceSession) {
     const sameChannel =
       voiceSession.channelId ===
       channel.id;
 
     if (sameChannel) {
+      await waitForVoiceReady(
+        voiceSession.connection
+      );
+
       return voiceSession;
     }
 
@@ -447,13 +602,14 @@ async function connectToVoice(
     player,
     channelId: channel.id,
     currentSound: null,
+    ffmpeg: null,
   };
 
   connection.on(
     VoiceConnectionStatus.Ready,
     () => {
       console.log(
-        `✓ Подключён к "${channel.name}"`
+        `✓ Voice READY: "${channel.name}"`
       );
     }
   );
@@ -485,6 +641,14 @@ async function connectToVoice(
         error
       );
     }
+  );
+
+  await waitForVoiceReady(
+    connection
+  );
+
+  console.log(
+    `✓ Полностью подключён к "${channel.name}"`
   );
 
   return voiceSession;
@@ -729,9 +893,7 @@ function getUserStats(userId) {
 // ACTIVE TIME
 // ============================================================
 
-function updateActiveTime(
-  userId
-) {
+function updateActiveTime(userId) {
   const user =
     getUserStats(userId);
 
@@ -927,8 +1089,7 @@ client.on(
         newState.member.id;
 
       if (
-        newState.member.user
-          ?.bot
+        newState.member.user?.bot
       ) {
         return;
       }
@@ -1761,14 +1922,24 @@ client.on(
           channel
         );
 
-        // Небольшая пауза,
-        // чтобы Discord успел установить соединение
+        // ====================================================
+        // ЖДЁМ РОВНО 3 СЕКУНДЫ ПОСЛЕ ПОДКЛЮЧЕНИЯ
+        // ====================================================
+
+        console.log(
+          "⏳ Жду 3 секунды перед воспроизведением..."
+        );
+
         await new Promise(
           (resolve) =>
             setTimeout(
               resolve,
-              500
+              3000
             )
+        );
+
+        console.log(
+          "▶️ 3 секунды прошли, запускаю звук..."
         );
 
         // Проигрываем
