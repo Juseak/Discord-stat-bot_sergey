@@ -93,11 +93,7 @@ const AI_MODEL = "gemini-3.5-flash-lite";
 const statsPath = path.join(__dirname, "stats.json");
 const templatePath = path.join(__dirname, "template.png");
 const fontPath = path.join(__dirname, "font.ttf");
-
-const soundsPath = path.join(
-  __dirname,
-  "sounds"
-);
+const soundsPath = path.join(__dirname, "sounds");
 
 // ============================================================
 // SOUNDS FOLDER
@@ -268,6 +264,7 @@ function createPcmStreamFromMp3(filePath) {
     );
 
     let stderr = "";
+    let settled = false;
 
     ffmpeg.stderr.on(
       "data",
@@ -290,7 +287,10 @@ function createPcmStreamFromMp3(filePath) {
           error
         );
 
-        reject(error);
+        if (!settled) {
+          settled = true;
+          reject(error);
+        }
       }
     );
 
@@ -341,7 +341,7 @@ async function playSound(number) {
   }
 
   console.log(
-    `🔊 Готовлю ${number}.mp3 к воспроизведению...`
+    `🎤 Готовлю ${number}.mp3 к воспроизведению...`
   );
 
   // Останавливаем предыдущий звук
@@ -395,6 +395,9 @@ async function playSound(number) {
     (resolve, reject) => {
       let finished = false;
 
+      let ffmpegExited = false;
+      let ffmpegExitCode = null;
+
       const cleanup = () => {
         voiceSession?.player?.removeListener(
           AudioPlayerStatus.Idle,
@@ -403,11 +406,21 @@ async function playSound(number) {
 
         voiceSession?.player?.removeListener(
           "error",
-          onError
+          onPlayerError
+        );
+
+        ffmpeg.removeListener(
+          "close",
+          onFfmpegClose
+        );
+
+        ffmpeg.removeListener(
+          "error",
+          onFfmpegError
         );
       };
 
-      const onIdle = () => {
+      const finishSuccess = () => {
         if (finished) {
           return;
         }
@@ -415,10 +428,6 @@ async function playSound(number) {
         finished = true;
 
         cleanup();
-
-        console.log(
-          `✓ ${number}.mp3 закончил воспроизведение`
-        );
 
         if (
           voiceSession?.ffmpeg ===
@@ -428,10 +437,14 @@ async function playSound(number) {
             null;
         }
 
+        console.log(
+          `✓ ${number}.mp3 полностью воспроизведён`
+        );
+
         resolve();
       };
 
-      const onError = (error) => {
+      const finishError = (error) => {
         if (finished) {
           return;
         }
@@ -441,7 +454,7 @@ async function playSound(number) {
         cleanup();
 
         console.error(
-          "❌ Audio Player error:",
+          "❌ Ошибка воспроизведения:",
           error
         );
 
@@ -456,6 +469,61 @@ async function playSound(number) {
         reject(error);
       };
 
+      const onIdle = () => {
+        // Если FFmpeg завершился с ошибкой,
+        // Idle не считаем успешным окончанием.
+        if (
+          ffmpegExited &&
+          ffmpegExitCode !== 0 &&
+          ffmpegExitCode !== null
+        ) {
+          finishError(
+            new Error(
+              `FFmpeg завершился с ошибкой. Код: ${ffmpegExitCode}`
+            )
+          );
+
+          return;
+        }
+
+        finishSuccess();
+      };
+
+      const onPlayerError = (
+        error
+      ) => {
+        finishError(error);
+      };
+
+      const onFfmpegError = (
+        error
+      ) => {
+        finishError(
+          new Error(
+            `Ошибка FFmpeg: ${error.message}`
+          )
+        );
+      };
+
+      const onFfmpegClose = (
+        code
+      ) => {
+        ffmpegExited = true;
+        ffmpegExitCode = code;
+
+        // FFmpeg с кодом != 0 = ошибка.
+        if (
+          code !== 0 &&
+          code !== null
+        ) {
+          finishError(
+            new Error(
+              `FFmpeg не смог обработать ${number}.mp3. Код: ${code}`
+            )
+          );
+        }
+      };
+
       voiceSession.player.once(
         AudioPlayerStatus.Idle,
         onIdle
@@ -463,7 +531,17 @@ async function playSound(number) {
 
       voiceSession.player.once(
         "error",
-        onError
+        onPlayerError
+      );
+
+      ffmpeg.once(
+        "close",
+        onFfmpegClose
+      );
+
+      ffmpeg.once(
+        "error",
+        onFfmpegError
       );
     }
   );
@@ -1917,13 +1995,16 @@ client.on(
 
         await interaction.deferReply();
 
-        // Подключаемся к войсу
+        // ====================================================
+        // ПОДКЛЮЧАЕМСЯ
+        // ====================================================
+
         await connectToVoice(
           channel
         );
 
         // ====================================================
-        // ЖДЁМ РОВНО 3 СЕКУНДЫ ПОСЛЕ ПОДКЛЮЧЕНИЯ
+        // ЖДЁМ РОВНО 3 СЕКУНДЫ
         // ====================================================
 
         console.log(
@@ -1942,14 +2023,31 @@ client.on(
           "▶️ 3 секунды прошли, запускаю звук..."
         );
 
-        // Проигрываем
+        // ====================================================
+        // ПРОИГРЫВАЕМ
+        // ====================================================
+
         await playSound(
           number
         );
 
+        // ====================================================
+        // ЗВУК ЗАКОНЧИЛСЯ
+        // ====================================================
+
         await interaction.editReply(
-          `🔊 Включил **${number}.mp3** в **${channel.name}**.`
+          `🔊 Воспроизвёл **${number}.mp3** в **${channel.name}**.`
         );
+
+        // ====================================================
+        // АВТОМАТИЧЕСКИ ВЫХОДИМ ИЗ VOICE
+        // ====================================================
+
+        console.log(
+          "🛑 Звук закончился. Отключаюсь от голосового канала..."
+        );
+
+        disconnectVoice();
 
         return;
       }
@@ -1985,8 +2083,17 @@ client.on(
         error
       );
 
+      // Если ошибка произошла во время voiceai,
+      // обязательно отключаем бота от войса.
+      if (
+        interaction.commandName ===
+        "voiceai"
+      ) {
+        disconnectVoice();
+      }
+
       const message =
-        "❌ Произошла ошибка. Проверь Railway Logs.";
+        `❌ Произошла ошибка: ${error.message || "неизвестная ошибка"}`;
 
       if (
         interaction.replied ||
