@@ -29,14 +29,15 @@ const HEIGHT = 1536;
 // ==============================
 // TEXT POSITIONS
 // ==============================
+
 const POS = {
     username: { x: 768, y: 105 },
 
-    voice:   { x: 128,  y: 1040, color: "#ff4b4b" },
-    message: { x: 380,  y: 1040, color: "#55a8ff" },
-    discord: { x: 625,  y: 1040, color: "#c080ff" },
-    gaming:  { x: 870,  y: 1040, color: "#43ff91" },
-    music:   { x: 1260, y: 1040, color: "#ffd84a" }
+    voice:   { x: 154,  y: 1350, color: "#ff4b4b" },
+    message: { x: 461,  y: 1350, color: "#55a8ff" },
+    discord: { x: 768,  y: 1350, color: "#c080ff" },
+    gaming:  { x: 1075, y: 1350, color: "#43ff91" },
+    music:   { x: 1382, y: 1350, color: "#ffd84a" }
 };
 
 const client = new Client({
@@ -531,7 +532,7 @@ async function generateCard(user, data) {
         ctx,
         POS.voice.x,
         POS.voice.y,
-        210,
+        250,
         64,
         voice,
         POS.voice.color
@@ -541,7 +542,7 @@ async function generateCard(user, data) {
         ctx,
         POS.message.x,
         POS.message.y,
-        210,
+        250,
         64,
         messages,
         POS.message.color
@@ -551,7 +552,7 @@ async function generateCard(user, data) {
         ctx,
         POS.discord.x,
         POS.discord.y,
-        210,
+        250,
         64,
         discord,
         POS.discord.color
@@ -561,8 +562,8 @@ async function generateCard(user, data) {
         ctx,
         POS.gaming.x,
         POS.gaming.y,
-        230,
-        86,
+        280,
+        64,
         gamingText,
         POS.gaming.color
     );
@@ -571,7 +572,7 @@ async function generateCard(user, data) {
         ctx,
         POS.music.x,
         POS.music.y,
-        190,
+        250,
         64,
         "SOON",
         POS.music.color
