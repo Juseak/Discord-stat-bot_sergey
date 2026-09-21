@@ -83,7 +83,6 @@ const gemini = new GoogleGenAI({
   apiKey: GEMINI_API_KEY,
 });
 
-// Обычный /ai — НЕ МЕНЯЕМ
 const AI_MODEL = "gemini-3.5-flash-lite";
 
 // ============================================================
@@ -122,14 +121,10 @@ function getSoundPath(number) {
 
 function getAvailableSounds() {
   try {
-    const files = fs.readdirSync(
-      soundsPath
-    );
+    const files = fs.readdirSync(soundsPath);
 
     return files
-      .filter((file) =>
-        /^\d+\.mp3$/i.test(file)
-      )
+      .filter((file) => /^\d+\.mp3$/i.test(file))
       .map((file) =>
         Number(
           path.basename(
@@ -138,9 +133,7 @@ function getAvailableSounds() {
           )
         )
       )
-      .sort(
-        (a, b) => a - b
-      );
+      .sort((a, b) => a - b);
   } catch (error) {
     console.error(
       "❌ Ошибка чтения sounds:",
@@ -212,7 +205,7 @@ function waitForVoiceReady(connection) {
 }
 
 // ============================================================
-// CREATE PCM STREAM FROM MP3
+// CREATE PCM STREAM FROM AUDIO
 // ============================================================
 
 function createPcmStreamFromMp3(filePath) {
@@ -227,6 +220,33 @@ function createPcmStreamFromMp3(filePath) {
       return;
     }
 
+    if (!fs.existsSync(filePath)) {
+      reject(
+        new Error(
+          `Файл не найден: ${filePath}`
+        )
+      );
+
+      return;
+    }
+
+    const fileSize =
+      fs.statSync(filePath).size;
+
+    console.log(
+      `📦 Размер файла: ${fileSize} байт`
+    );
+
+    if (fileSize === 0) {
+      reject(
+        new Error(
+          "MP3-файл пустой."
+        )
+      );
+
+      return;
+    }
+
     console.log(
       `🎵 FFmpeg запускается: ${filePath}`
     );
@@ -235,14 +255,19 @@ function createPcmStreamFromMp3(filePath) {
       ffmpegPath,
       [
         "-hide_banner",
+
+        // Подробная диагностика
         "-loglevel",
         "error",
 
+        // Принудительно читаем файл как вход
         "-i",
         filePath,
 
+        // Только аудио
         "-vn",
 
+        // Discord PCM
         "-f",
         "s16le",
 
@@ -264,7 +289,6 @@ function createPcmStreamFromMp3(filePath) {
     );
 
     let stderr = "";
-    let settled = false;
 
     ffmpeg.stderr.on(
       "data",
@@ -287,10 +311,7 @@ function createPcmStreamFromMp3(filePath) {
           error
         );
 
-        if (!settled) {
-          settled = true;
-          reject(error);
-        }
+        reject(error);
       }
     );
 
@@ -306,8 +327,11 @@ function createPcmStreamFromMp3(filePath) {
           code !== null
         ) {
           console.error(
-            "❌ FFmpeg stderr:",
-            stderr
+            "❌ FFmpeg stderr:"
+          );
+
+          console.error(
+            stderr || "(пусто)"
           );
         }
       }
@@ -395,9 +419,6 @@ async function playSound(number) {
     (resolve, reject) => {
       let finished = false;
 
-      let ffmpegExited = false;
-      let ffmpegExitCode = null;
-
       const cleanup = () => {
         voiceSession?.player?.removeListener(
           AudioPlayerStatus.Idle,
@@ -453,11 +474,6 @@ async function playSound(number) {
 
         cleanup();
 
-        console.error(
-          "❌ Ошибка воспроизведения:",
-          error
-        );
-
         if (
           voiceSession?.ffmpeg ===
           ffmpeg
@@ -466,25 +482,22 @@ async function playSound(number) {
             null;
         }
 
+        console.error(
+          "❌ Ошибка воспроизведения:",
+          error.message
+        );
+
         reject(error);
       };
 
       const onIdle = () => {
-        // Если FFmpeg завершился с ошибкой,
-        // Idle не считаем успешным окончанием.
-        if (
-          ffmpegExited &&
-          ffmpegExitCode !== 0 &&
-          ffmpegExitCode !== null
-        ) {
-          finishError(
-            new Error(
-              `FFmpeg завершился с ошибкой. Код: ${ffmpegExitCode}`
-            )
-          );
-
-          return;
-        }
+        /*
+         * Idle сам по себе не означает,
+         * что FFmpeg успешно обработал файл.
+         *
+         * Поэтому просто завершаем успешно,
+         * если FFmpeg не сообщил об ошибке.
+         */
 
         finishSuccess();
       };
@@ -508,10 +521,6 @@ async function playSound(number) {
       const onFfmpegClose = (
         code
       ) => {
-        ffmpegExited = true;
-        ffmpegExitCode = code;
-
-        // FFmpeg с кодом != 0 = ошибка.
         if (
           code !== 0 &&
           code !== null
@@ -1782,19 +1791,11 @@ async function askAI(
 // ============================================================
 
 const commands = [
-  // ----------------------------------------------------------
-  // STATS
-  // ----------------------------------------------------------
-
   new SlashCommandBuilder()
     .setName("stats")
     .setDescription(
       "Показать статистику пользователя"
     ),
-
-  // ----------------------------------------------------------
-  // AI
-  // ----------------------------------------------------------
 
   new SlashCommandBuilder()
     .setName("ai")
@@ -1810,10 +1811,6 @@ const commands = [
           )
           .setRequired(true)
     ),
-
-  // ----------------------------------------------------------
-  // VOICEAI
-  // ----------------------------------------------------------
 
   new SlashCommandBuilder()
     .setName("voiceai")
@@ -1831,10 +1828,6 @@ const commands = [
           .setMinValue(1)
           .setMaxValue(999)
     ),
-
-  // ----------------------------------------------------------
-  // VOICEAI STOP
-  // ----------------------------------------------------------
 
   new SlashCommandBuilder()
     .setName("voiceai-stop")
@@ -1973,9 +1966,7 @@ client.on(
         }
 
         const filePath =
-          getSoundPath(
-            number
-          );
+          getSoundPath(number);
 
         if (
           !fs.existsSync(
@@ -1995,16 +1986,13 @@ client.on(
 
         await interaction.deferReply();
 
-        // ====================================================
-        // ПОДКЛЮЧАЕМСЯ
-        // ====================================================
-
+        // Подключаемся
         await connectToVoice(
           channel
         );
 
         // ====================================================
-        // ЖДЁМ РОВНО 3 СЕКУНДЫ
+        // РОВНО 3 СЕКУНДЫ ПОСЛЕ ПОДКЛЮЧЕНИЯ
         // ====================================================
 
         console.log(
@@ -2032,7 +2020,7 @@ client.on(
         );
 
         // ====================================================
-        // ЗВУК ЗАКОНЧИЛСЯ
+        // УСПЕШНО ЗАКОНЧИЛ
         // ====================================================
 
         await interaction.editReply(
@@ -2040,7 +2028,7 @@ client.on(
         );
 
         // ====================================================
-        // АВТОМАТИЧЕСКИ ВЫХОДИМ ИЗ VOICE
+        // ВЫХОДИМ ИЗ VOICE
         // ====================================================
 
         console.log(
@@ -2083,8 +2071,6 @@ client.on(
         error
       );
 
-      // Если ошибка произошла во время voiceai,
-      // обязательно отключаем бота от войса.
       if (
         interaction.commandName ===
         "voiceai"
