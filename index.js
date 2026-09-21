@@ -294,22 +294,8 @@ function roundedRect(ctx, x, y, w, h, r) {
     ctx.closePath();
 }
 
-function fitFont(ctx, text, maxWidth, startSize, family = "Arial") {
-    let size = startSize;
-    while (size > 14) {
-        ctx.font = `bold ${size}px ${family}`;
-        if (ctx.measureText(text).width <= maxWidth) {
-            return size;
-        }
-        size--;
-    }
-    return size;
-}
-
 function drawCentered(ctx, text, x, y, maxWidth, color, size) {
-    const finalSize = fitFont(ctx, text, maxWidth, size);
-
-    ctx.font = `bold ${finalSize}px Arial`;
+    ctx.font = `bold ${size}px Arial`;
     ctx.fillStyle = color;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -326,13 +312,13 @@ function drawCentered(ctx, text, x, y, maxWidth, color, size) {
 }
 
 // ==============================
-// STATISTIC BADGE
+// STATISTIC BADGE (С ГАРАНТИРОВАННЫМ ОТОБРАЖЕНИЕМ ТЕКСТА)
 // ==============================
 
 function drawStatBadge(ctx, x, y, w, h, value, color) {
     ctx.save();
 
-    ctx.fillStyle = "rgba(0,0,0,0.58)";
+    ctx.fillStyle = "rgba(0,0,0,0.7)";
     roundedRect(ctx, x - w / 2, y - h / 2, w, h, 18);
     ctx.fill();
 
@@ -343,7 +329,7 @@ function drawStatBadge(ctx, x, y, w, h, value, color) {
 
     ctx.restore();
 
-    drawCentered(ctx, value, x, y, w - 24, "#ffffff", 34);
+    drawCentered(ctx, String(value), x, y, w - 20, "#ffffff", 24);
 }
 
 // ==============================
