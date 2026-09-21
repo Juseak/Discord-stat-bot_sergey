@@ -16,9 +16,9 @@ const path = require("path");
 // CONFIG
 // ==============================
 
-const TOKEN = "PUT_BOT_TOKEN_HERE";
-const CLIENT_ID = "PUT_CLIENT_ID_HERE";
-const GUILD_ID = "PUT_GUILD_ID_HERE";
+const TOKEN = process.env.DISCORD_TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
+const GUILD_ID = process.env.GUILD_ID;
 
 const TEMPLATE = path.join(__dirname, "template", "template.png");
 const STORAGE = path.join(__dirname, "stats.json");
