@@ -27,7 +27,9 @@ const WIDTH = 1536;
 const HEIGHT = 1536;
 
 // ==============================
-// TEXT const POS = {
+// TEXT POSITIONS
+// ==============================
+const POS = {
     username: { x: 768, y: 105 },
 
     voice:   { x: 128,  y: 1040, color: "#ff4b4b" },
@@ -35,7 +37,6 @@ const HEIGHT = 1536;
     discord: { x: 625,  y: 1040, color: "#c080ff" },
     gaming:  { x: 870,  y: 1040, color: "#43ff91" },
     music:   { x: 1260, y: 1040, color: "#ffd84a" }
-};
 };
 
 const client = new Client({
