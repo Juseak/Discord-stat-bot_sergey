@@ -144,7 +144,9 @@ function getTodayDateString() {
 }
 
 function loadStats() {
+
     if (!fs.existsSync(STORAGE)) {
+
         fs.writeFileSync(
             STORAGE,
             JSON.stringify(
@@ -159,6 +161,7 @@ function loadStats() {
     }
 
     try {
+
         const raw = JSON.parse(
             fs.readFileSync(
                 STORAGE,
@@ -173,7 +176,8 @@ function loadStats() {
                 users: raw
             };
 
-        const today = getTodayDateString();
+        const today =
+            getTodayDateString();
 
         if (db.lastDate !== today) {
 
@@ -217,6 +221,7 @@ function loadStats() {
         return db;
 
     } catch {
+
         return {
             lastDate: getTodayDateString(),
             users: {}
@@ -227,7 +232,9 @@ function loadStats() {
 let db = loadStats();
 
 function saveStats() {
-    db.lastDate = getTodayDateString();
+
+    db.lastDate =
+        getTodayDateString();
 
     fs.writeFileSync(
         STORAGE,
@@ -268,10 +275,11 @@ function getUser(id) {
 
 function formatTime(seconds) {
 
-    seconds = Math.max(
-        0,
-        Math.floor(seconds)
-    );
+    seconds =
+        Math.max(
+            0,
+            Math.floor(seconds)
+        );
 
     if (isNaN(seconds)) {
         return "0m";
@@ -374,7 +382,7 @@ function finalizeGaming(data) {
 }
 
 // ==============================
-// MESSAGE TRACKING
+// TRACKING EVENTS
 // ==============================
 
 client.on(
@@ -417,7 +425,9 @@ client.on(
         }
 
         const data =
-            getUser(newState.id);
+            getUser(
+                newState.id
+            );
 
         // Вошёл в голосовой канал
 
@@ -451,9 +461,7 @@ client.on(
 // PRESENCE / GAMING TRACKING
 // ==============================
 
-function presenceIsOnline(
-    presence
-) {
+function presenceIsOnline(presence) {
 
     return (
         presence &&
@@ -485,7 +493,7 @@ client.on(
             );
 
         // ==========================
-        // DISCORD ONLINE
+        // DISCORD ONLINE TIME
         // ==========================
 
         const online =
@@ -671,14 +679,12 @@ function drawStatBadge(
 
     // Border
 
-    ctx.shadowBlur =
-        0;
+    ctx.shadowBlur = 0;
 
     ctx.strokeStyle =
         color;
 
-    ctx.lineWidth =
-        3;
+    ctx.lineWidth = 3;
 
     ctx.beginPath();
 
@@ -741,7 +747,9 @@ async function generateCard(
         );
 
     const ctx =
-        canvas.getContext("2d");
+        canvas.getContext(
+            "2d"
+        );
 
     const template =
         await getTemplateImage();
@@ -787,37 +795,51 @@ async function generateCard(
         52
     );
 
-    // Voice
+    // ==========================
+    // VOICE
+    // ==========================
 
     const voiceSec =
-        currentVoiceSeconds(data);
+        currentVoiceSeconds(
+            data
+        );
 
     const voiceText =
         voiceSec > 0
             ? formatTime(voiceSec)
             : "0m";
 
-    // Messages
+    // ==========================
+    // MESSAGES
+    // ==========================
 
     const messagesText =
         String(
             data.messages || 0
         );
 
-    // Discord
+    // ==========================
+    // DISCORD
+    // ==========================
 
     const discordSec =
-        currentDiscordSeconds(data);
+        currentDiscordSeconds(
+            data
+        );
 
     const discordText =
         discordSec > 0
             ? formatTime(discordSec)
             : "0m";
 
-    // Gaming
+    // ==========================
+    // GAMING
+    // ==========================
 
     const activeGamingSec =
-        currentGamingSeconds(data);
+        currentGamingSeconds(
+            data
+        );
 
     const gamingTime =
         formatTime(
@@ -827,14 +849,18 @@ async function generateCard(
     const gamingText =
         data.gamingGame &&
         activeGamingSec > 0
+
             ? `${data.gamingGame} • ${gamingTime}`
+
             : (
                 activeGamingSec > 0
                     ? gamingTime
                     : "0m"
             );
 
-    // Draw badges
+    // ==========================
+    // DRAW BADGES
+    // ==========================
 
     drawStatBadge(
         ctx,
@@ -895,18 +921,16 @@ async function generateCard(
 // GEMINI AI
 // ==============================
 
-async function askAI(
-    prompt
-) {
+async function askAI(prompt) {
 
     const response =
         await gemini.models.generateContent({
 
+            // АКТУАЛЬНАЯ МОДЕЛЬ
             model:
-                "gemini-2.5-flash-lite",
+                "gemini-3.5-flash-lite",
 
-            contents:
-                prompt,
+            contents: prompt,
 
             config: {
 
@@ -927,13 +951,13 @@ async function askAI(
 
 const commands = [
 
-    // /stats
+    // ==========================
+    // /STATS
+    // ==========================
 
     new SlashCommandBuilder()
 
-        .setName(
-            "stats"
-        )
+        .setName("stats")
 
         .setDescription(
             "Показать статистику пользователя"
@@ -942,26 +966,22 @@ const commands = [
         .addUserOption(
             option =>
                 option
-                    .setName(
-                        "user"
-                    )
+                    .setName("user")
 
                     .setDescription(
                         "Пользователь"
                     )
 
-                    .setRequired(
-                        false
-                    )
+                    .setRequired(false)
         ),
 
-    // /ai
+    // ==========================
+    // /AI
+    // ==========================
 
     new SlashCommandBuilder()
 
-        .setName(
-            "ai"
-        )
+        .setName("ai")
 
         .setDescription(
             "Задать вопрос нейросети"
@@ -970,17 +990,13 @@ const commands = [
         .addStringOption(
             option =>
                 option
-                    .setName(
-                        "prompt"
-                    )
+                    .setName("prompt")
 
                     .setDescription(
                         "Ваш запрос к нейросети"
                     )
 
-                    .setRequired(
-                        true
-                    )
+                    .setRequired(true)
         )
 
 ].map(
@@ -997,10 +1013,9 @@ async function registerCommands() {
     const rest =
         new REST({
             version: "10"
-        })
-            .setToken(
-                TOKEN
-            );
+        }).setToken(
+            TOKEN
+        );
 
     await rest.put(
 
@@ -1047,8 +1062,7 @@ client.on(
             const target =
                 interaction.options.getUser(
                     "user"
-                ) ||
-                interaction.user;
+                ) || interaction.user;
 
             const data =
                 getUser(
@@ -1132,7 +1146,9 @@ client.on(
                         prompt
                     );
 
-                // Discord максимум 2000 символов
+                // ==========================
+                // DISCORD MAX 2000 SYMBOLS
+                // ==========================
 
                 if (
                     answer.length <= 2000
@@ -1203,7 +1219,9 @@ client.once(
             `✓ Бот запущен: ${client.user.tag}`
         );
 
-        // Проверяем Gemini-ключ
+        // ==========================
+        // CHECK GEMINI KEY
+        // ==========================
 
         if (
             process.env.GEMINI_API_KEY
@@ -1220,7 +1238,9 @@ client.once(
             );
         }
 
-        // Предзагрузка шаблона
+        // ==========================
+        // PRELOAD TEMPLATE
+        // ==========================
 
         await getTemplateImage();
 
@@ -1228,18 +1248,20 @@ client.once(
             "✓ Шаблон закэширован!"
         );
 
-        // Восстановление активных сессий
+        // ==========================
+        // RESTORE ACTIVE SESSIONS
+        // ==========================
 
         for (
-            const guild
-            of client.guilds.cache.values()
+            const guild of
+            client.guilds.cache.values()
         ) {
 
             await guild.members.fetch();
 
             for (
-                const member
-                of guild.members.cache.values()
+                const member of
+                guild.members.cache.values()
             ) {
 
                 if (
@@ -1256,7 +1278,9 @@ client.once(
                         member.id
                     );
 
-                // Discord online
+                // ==========================
+                // DISCORD ONLINE
+                // ==========================
 
                 if (
                     presenceIsOnline(
@@ -1269,7 +1293,9 @@ client.once(
                         Date.now();
                 }
 
-                // Game
+                // ==========================
+                // GAME
+                // ==========================
 
                 const game =
                     presence?.activities?.find(
@@ -1290,11 +1316,13 @@ client.once(
                         Date.now();
                 }
 
-                // Voice
+                // ==========================
+                // VOICE
+                // ==========================
 
                 for (
-                    const channel
-                    of guild.channels.cache.values()
+                    const channel of
+                    guild.channels.cache.values()
                 ) {
 
                     if (
