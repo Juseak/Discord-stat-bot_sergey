@@ -20,7 +20,7 @@ const TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 
-const TEMPLATE = path.join(__dirname, "template", "template.png");
+const TEMPLATE = path.join(__dirname, "Template.png");
 const STORAGE = path.join(__dirname, "stats.json");
 
 const WIDTH = 1536;
