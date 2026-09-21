@@ -79,6 +79,7 @@ const VOICE_AI_SYSTEM =
 // ==============================
 
 if (fs.existsSync(FONT_PATH)) {
+
     GlobalFonts.registerFromPath(
         FONT_PATH,
         "CustomFont"
@@ -87,7 +88,9 @@ if (fs.existsSync(FONT_PATH)) {
     console.log(
         "✓ Кастомный шрифт успешно загружен!"
     );
+
 } else {
+
     console.warn(
         "❌ ВНИМАНИЕ: Файл font.ttf не найден!"
     );
@@ -98,6 +101,7 @@ if (fs.existsSync(FONT_PATH)) {
 // ==============================
 
 const POS = {
+
     username: {
         x: 768,
         y: 105
@@ -139,12 +143,19 @@ const POS = {
 // ==============================
 
 const client = new Client({
+
     intents: [
+
         GatewayIntentBits.Guilds,
+
         GatewayIntentBits.GuildMembers,
+
         GatewayIntentBits.GuildMessages,
+
         GatewayIntentBits.MessageContent,
+
         GatewayIntentBits.GuildVoiceStates,
+
         GatewayIntentBits.GuildPresences
     ]
 });
@@ -156,10 +167,15 @@ const client = new Client({
 let cachedTemplate = null;
 
 async function getTemplateImage() {
+
     if (!cachedTemplate) {
-        cachedTemplate = await loadImage(
-            await fs.promises.readFile(TEMPLATE)
-        );
+
+        cachedTemplate =
+            await loadImage(
+                await fs.promises.readFile(
+                    TEMPLATE
+                )
+            );
     }
 
     return cachedTemplate;
@@ -170,6 +186,7 @@ async function getTemplateImage() {
 // ==============================
 
 function getTodayDateString() {
+
     const d = new Date();
 
     return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
@@ -180,12 +197,18 @@ function loadStats() {
     if (!fs.existsSync(STORAGE)) {
 
         fs.writeFileSync(
+
             STORAGE,
+
             JSON.stringify(
+
                 {
-                    lastDate: getTodayDateString(),
+                    lastDate:
+                        getTodayDateString(),
+
                     users: {}
                 },
+
                 null,
                 2
             )
@@ -194,26 +217,35 @@ function loadStats() {
 
     try {
 
-        const raw = JSON.parse(
-            fs.readFileSync(
-                STORAGE,
-                "utf8"
-            )
-        );
+        const raw =
+            JSON.parse(
+                fs.readFileSync(
+                    STORAGE,
+                    "utf8"
+                )
+            );
 
         let db = raw.users
+
             ? raw
+
             : {
-                lastDate: getTodayDateString(),
+                lastDate:
+                    getTodayDateString(),
+
                 users: raw
             };
 
         const today =
             getTodayDateString();
 
-        if (db.lastDate !== today) {
+        if (
+            db.lastDate !== today
+        ) {
 
-            for (const id in db.users) {
+            for (
+                const id in db.users
+            ) {
 
                 db.users[id].messages = 0;
 
@@ -226,28 +258,38 @@ function loadStats() {
                 db.users[id].gamingGame = null;
 
                 if (
-                    db.users[id].voiceStartedAt
+                    db.users[id]
+                        .voiceStartedAt
                 ) {
-                    db.users[id].voiceStartedAt =
+
+                    db.users[id]
+                        .voiceStartedAt =
                         Date.now();
                 }
 
                 if (
-                    db.users[id].discordStartedAt
+                    db.users[id]
+                        .discordStartedAt
                 ) {
-                    db.users[id].discordStartedAt =
+
+                    db.users[id]
+                        .discordStartedAt =
                         Date.now();
                 }
 
                 if (
-                    db.users[id].gamingStartedAt
+                    db.users[id]
+                        .gamingStartedAt
                 ) {
-                    db.users[id].gamingStartedAt =
+
+                    db.users[id]
+                        .gamingStartedAt =
                         Date.now();
                 }
             }
 
-            db.lastDate = today;
+            db.lastDate =
+                today;
         }
 
         return db;
@@ -255,7 +297,10 @@ function loadStats() {
     } catch {
 
         return {
-            lastDate: getTodayDateString(),
+
+            lastDate:
+                getTodayDateString(),
+
             users: {}
         };
     }
@@ -269,7 +314,9 @@ function saveStats() {
         getTodayDateString();
 
     fs.writeFileSync(
+
         STORAGE,
+
         JSON.stringify(
             db,
             null,
@@ -314,6 +361,7 @@ function formatTime(seconds) {
         );
 
     if (isNaN(seconds)) {
+
         return "0m";
     }
 
@@ -333,10 +381,12 @@ function formatTime(seconds) {
         );
 
     if (days > 0) {
+
         return `${days}d ${hours}h`;
     }
 
     if (hours > 0) {
+
         return `${hours}h ${minutes}m`;
     }
 
@@ -349,6 +399,7 @@ function calculateCurrent(
 ) {
 
     if (!startTime) {
+
         return baseSeconds || 0;
     }
 
@@ -358,7 +409,9 @@ function calculateCurrent(
         );
 
     return (
+
         (baseSeconds || 0) +
+
         (diff > 0 ? diff : 0)
     );
 }
@@ -392,7 +445,8 @@ function finalizeVoice(data) {
     data.voiceSeconds =
         currentVoiceSeconds(data);
 
-    data.voiceStartedAt = null;
+    data.voiceStartedAt =
+        null;
 }
 
 function finalizeDiscord(data) {
@@ -400,7 +454,8 @@ function finalizeDiscord(data) {
     data.discordSeconds =
         currentDiscordSeconds(data);
 
-    data.discordStartedAt = null;
+    data.discordStartedAt =
+        null;
 }
 
 function finalizeGaming(data) {
@@ -408,9 +463,11 @@ function finalizeGaming(data) {
     data.gamingSeconds =
         currentGamingSeconds(data);
 
-    data.gamingStartedAt = null;
+    data.gamingStartedAt =
+        null;
 
-    data.gamingGame = null;
+    data.gamingGame =
+        null;
 }
 
 // ==============================
@@ -426,6 +483,7 @@ client.on(
             !message.author ||
             message.author.bot
         ) {
+
             return;
         }
 
@@ -453,6 +511,7 @@ client.on(
             !newState.member ||
             newState.member.user.bot
         ) {
+
             return;
         }
 
@@ -461,28 +520,28 @@ client.on(
                 newState.id
             );
 
-        // Вошёл в голосовой канал
-
         if (
             !oldState.channelId &&
             newState.channelId
         ) {
 
-            if (!data.voiceStartedAt) {
+            if (
+                !data.voiceStartedAt
+            ) {
 
                 data.voiceStartedAt =
                     Date.now();
             }
         }
 
-        // Вышел из голосового канала
-
         if (
             oldState.channelId &&
             !newState.channelId
         ) {
 
-            finalizeVoice(data);
+            finalizeVoice(
+                data
+            );
         }
 
         saveStats();
@@ -493,10 +552,14 @@ client.on(
 // PRESENCE / GAMING TRACKING
 // ==============================
 
-function presenceIsOnline(presence) {
+function presenceIsOnline(
+    presence
+) {
 
     return (
+
         presence &&
+
         [
             "online",
             "idle",
@@ -516,6 +579,7 @@ client.on(
             !newPresence.member ||
             newPresence.member.user.bot
         ) {
+
             return;
         }
 
@@ -523,10 +587,6 @@ client.on(
             getUser(
                 newPresence.userId
             );
-
-        // ==========================
-        // DISCORD ONLINE TIME
-        // ==========================
 
         const online =
             presenceIsOnline(
@@ -546,12 +606,10 @@ client.on(
             data.discordStartedAt
         ) {
 
-            finalizeDiscord(data);
+            finalizeDiscord(
+                data
+            );
         }
-
-        // ==========================
-        // GAME TRACKING
-        // ==========================
 
         const gameActivity =
             newPresence.activities?.find(
@@ -561,7 +619,8 @@ client.on(
             );
 
         const gameName =
-            gameActivity?.name || null;
+            gameActivity?.name ||
+            null;
 
         if (!gameName) {
 
@@ -569,7 +628,9 @@ client.on(
                 data.gamingStartedAt
             ) {
 
-                finalizeGaming(data);
+                finalizeGaming(
+                    data
+                );
             }
 
         } else {
@@ -589,7 +650,9 @@ client.on(
                 gameName
             ) {
 
-                finalizeGaming(data);
+                finalizeGaming(
+                    data
+                );
 
                 data.gamingGame =
                     gameName;
@@ -609,7 +672,9 @@ client.on(
 
 setInterval(
     () => {
+
         saveStats();
+
     },
     30000
 );
@@ -705,12 +770,14 @@ function drawStatBadge(
 
     ctx.fill();
 
-    ctx.shadowBlur = 0;
+    ctx.shadowBlur =
+        0;
 
     ctx.strokeStyle =
         color;
 
-    ctx.lineWidth = 3;
+    ctx.lineWidth =
+        3;
 
     ctx.beginPath();
 
@@ -921,7 +988,9 @@ async function generateCard(
 // GEMINI AI
 // ==============================
 
-async function askAI(prompt) {
+async function askAI(
+    prompt
+) {
 
     const response =
         await gemini.models.generateContent({
@@ -929,7 +998,8 @@ async function askAI(prompt) {
             model:
                 "gemini-3.5-flash-lite",
 
-            contents: prompt,
+            contents:
+                prompt,
 
             config: {
 
@@ -944,8 +1014,12 @@ async function askAI(prompt) {
     );
 }
 
+// ============================================================
+// VOICE AI
+// ============================================================
+
 // ==============================
-// VOICE AI — WAV
+// WAV
 // ==============================
 
 function createWavBuffer(
@@ -1046,7 +1120,7 @@ function createWavBuffer(
 }
 
 // ==============================
-// VOICE AI — RESAMPLE TTS
+// TTS → DISCORD AUDIO
 // ==============================
 
 function convertTtsPcmToDiscord(
@@ -1056,26 +1130,45 @@ function convertTtsPcmToDiscord(
     return new Promise(
         (resolve, reject) => {
 
+            if (!ffmpegPath) {
+
+                reject(
+                    new Error(
+                        "FFmpeg не найден."
+                    )
+                );
+
+                return;
+            }
+
             const ffmpeg =
                 spawn(
                     ffmpegPath,
                     [
+
                         "-f",
                         "s16le",
+
                         "-ar",
                         "24000",
+
                         "-ac",
                         "1",
+
                         "-i",
                         "pipe:0",
 
                         "-f",
                         "s16le",
+
                         "-ar",
                         "48000",
+
                         "-ac",
                         "2",
+
                         "pipe:1"
+
                     ],
                     {
                         stdio: [
@@ -1091,20 +1184,30 @@ function convertTtsPcmToDiscord(
             ffmpeg.stdout.on(
                 "data",
                 chunk => {
-                    chunks.push(chunk);
+
+                    chunks.push(
+                        chunk
+                    );
                 }
             );
 
             ffmpeg.on(
                 "error",
-                reject
+                error => {
+
+                    reject(
+                        error
+                    );
+                }
             );
 
             ffmpeg.on(
                 "close",
                 code => {
 
-                    if (code !== 0) {
+                    if (
+                        code !== 0
+                    ) {
 
                         reject(
                             new Error(
@@ -1131,7 +1234,7 @@ function convertTtsPcmToDiscord(
 }
 
 // ==============================
-// VOICE AI — GEMINI SPEECH
+// GEMINI → TEXT
 // ==============================
 
 async function transcribeVoice(
@@ -1153,16 +1256,21 @@ async function transcribeVoice(
                 VOICE_AI_TEXT_MODEL,
 
             contents: [
+
                 {
                     text:
                         "Распознай речь на аудиозаписи. " +
-                        "Верни только дословный текст речи без пояснений. " +
+                        "Верни только текст речи без пояснений. " +
+                        "Не добавляй кавычки. " +
                         "Если речи нет или её невозможно разобрать, верни пустую строку."
                 },
+
                 {
                     inlineData: {
+
                         mimeType:
                             "audio/wav",
+
                         data:
                             wav.toString(
                                 "base64"
@@ -1179,7 +1287,7 @@ async function transcribeVoice(
 }
 
 // ==============================
-// VOICE AI — ASK GEMINI
+// GEMINI → ANSWER
 // ==============================
 
 async function askVoiceAI(
@@ -1196,6 +1304,7 @@ async function askVoiceAI(
                 text,
 
             config: {
+
                 systemInstruction:
                     VOICE_AI_SYSTEM
             }
@@ -1208,7 +1317,7 @@ async function askVoiceAI(
 }
 
 // ==============================
-// VOICE AI — TTS
+// GEMINI → TTS
 // ==============================
 
 async function textToSpeech(
@@ -1235,7 +1344,9 @@ async function textToSpeech(
                     voiceConfig: {
 
                         prebuiltVoiceConfig: {
-                            voiceName: "Kore"
+
+                            voiceName:
+                                "Kore"
                         }
                     }
                 }
@@ -1267,7 +1378,7 @@ async function textToSpeech(
 }
 
 // ==============================
-// VOICE AI — PLAY AUDIO
+// PLAY VOICE
 // ==============================
 
 async function playVoiceAI(
@@ -1280,10 +1391,18 @@ async function playVoiceAI(
             text
         );
 
+    console.log(
+        `🔊 TTS: получено ${pcm24k.length} bytes`
+    );
+
     const pcm48k =
         await convertTtsPcmToDiscord(
             pcm24k
         );
+
+    console.log(
+        `🔊 TTS: после конвертации ${pcm48k.length} bytes`
+    );
 
     const resource =
         createAudioResource(
@@ -1291,55 +1410,98 @@ async function playVoiceAI(
             {
                 inputType:
                     StreamType.Raw,
+
                 inlineVolume:
                     false
             }
         );
 
-    session.player.play(
-        resource
-    );
-
     return new Promise(
-        resolve => {
+        (resolve, reject) => {
+
+            let finished =
+                false;
 
             const timeout =
                 setTimeout(
-                    resolve,
+                    () => finish(),
                     30000
                 );
 
-            const listener =
-                state => {
+            function finish() {
 
-                    if (
-                        state.status ===
-                        AudioPlayerStatus.Idle
-                    ) {
+                if (
+                    finished
+                ) {
 
-                        clearTimeout(
-                            timeout
-                        );
+                    return;
+                }
 
-                        session.player.off(
-                            "stateChange",
-                            listener
-                        );
+                finished =
+                    true;
 
-                        resolve();
-                    }
-                };
+                clearTimeout(
+                    timeout
+                );
+
+                session.player.off(
+                    "stateChange",
+                    listener
+                );
+
+                resolve();
+            }
+
+            function listener(
+                oldState,
+                newState
+            ) {
+
+                if (
+                    newState.status ===
+                    AudioPlayerStatus.Idle
+                ) {
+
+                    finish();
+                }
+            }
 
             session.player.on(
                 "stateChange",
                 listener
             );
+
+            try {
+
+                session.player.play(
+                    resource
+                );
+
+                console.log(
+                    "🔊 AudioPlayer начал воспроизведение."
+                );
+
+            } catch (error) {
+
+                clearTimeout(
+                    timeout
+                );
+
+                session.player.off(
+                    "stateChange",
+                    listener
+                );
+
+                reject(
+                    error
+                );
+            }
         }
     );
 }
 
 // ==============================
-// VOICE AI — PROCESS SPEECH
+// PROCESS SPEECH
 // ==============================
 
 async function processVoiceAudio(
@@ -1351,12 +1513,19 @@ async function processVoiceAudio(
     if (
         !session.active
     ) {
+
         return;
     }
 
+    // Минимум примерно 0.5 секунды
     if (
-        pcmData.length < 48000
+        pcmData.length < 96000
     ) {
+
+        console.log(
+            `🎤 Слишком короткий фрагмент: ${pcmData.length} bytes`
+        );
+
         return;
     }
 
@@ -1365,6 +1534,11 @@ async function processVoiceAudio(
             userId
         )
     ) {
+
+        console.log(
+            `⏳ ${userId} уже обрабатывается`
+        );
+
         return;
     }
 
@@ -1375,7 +1549,7 @@ async function processVoiceAudio(
     try {
 
         console.log(
-            `🎤 Voice AI: получено аудио от ${userId}`
+            `🎤 Отправляю голос ${userId} в Gemini...`
         );
 
         const text =
@@ -1383,16 +1557,18 @@ async function processVoiceAudio(
                 pcmData
             );
 
-        if (
-            !text
-        ) {
+        console.log(
+            `📝 Распознано: "${text}"`
+        );
+
+        if (!text) {
+
+            console.log(
+                "ℹ️ Gemini не нашёл речи."
+            );
 
             return;
         }
-
-        console.log(
-            `📝 Voice AI распознал: ${text}`
-        );
 
         const answer =
             await askVoiceAI(
@@ -1400,18 +1576,28 @@ async function processVoiceAudio(
             );
 
         console.log(
-            `🤖 Voice AI ответ: ${answer}`
+            `🤖 Ответ: "${answer}"`
         );
 
         if (
-            session.active
+            !session.active
         ) {
 
-            await playVoiceAI(
-                session,
-                answer
-            );
+            return;
         }
+
+        console.log(
+            "🔊 Создаю голосовой ответ..."
+        );
+
+        await playVoiceAI(
+            session,
+            answer
+        );
+
+        console.log(
+            "✓ Голосовой ответ закончен."
+        );
 
     } catch (error) {
 
@@ -1429,7 +1615,7 @@ async function processVoiceAudio(
 }
 
 // ==============================
-// VOICE AI — LISTEN USER
+// LISTEN USER
 // ==============================
 
 function listenToUser(
@@ -1438,10 +1624,21 @@ function listenToUser(
 ) {
 
     if (
-        !session.active ||
+        !session.active
+    ) {
+
+        return;
+    }
+
+    if (
         session.voiceConnection.state.status !==
         VoiceConnectionStatus.Ready
     ) {
+
+        console.log(
+            "⚠️ Voice connection ещё не Ready."
+        );
+
         return;
     }
 
@@ -1450,6 +1647,7 @@ function listenToUser(
             userId
         )
     ) {
+
         return;
     }
 
@@ -1464,20 +1662,22 @@ function listenToUser(
             receiver.subscribe(
                 userId,
                 {
-                    end:
-                        {
-                            behavior:
-                                EndBehaviorType.AfterSilence,
-                            duration:
-                                700
-                        }
+
+                    end: {
+
+                        behavior:
+                            EndBehaviorType.AfterSilence,
+
+                        duration:
+                            1000
+                    }
                 }
             );
 
     } catch (error) {
 
         console.error(
-            "❌ Не удалось подписаться на голос:",
+            "❌ Не удалось получить голос:",
             error
         );
 
@@ -1489,31 +1689,38 @@ function listenToUser(
         audioStream
     );
 
+    console.log(
+        `🎤 START: слушаю ${userId}`
+    );
+
     const decoder =
         new prism.opus.Decoder({
-            frameSize: 960,
-            channels: 2,
-            rate: 48000
+
+            frameSize:
+                960,
+
+            channels:
+                2,
+
+            rate:
+                48000
         });
 
     const chunks = [];
 
     audioStream
         .pipe(decoder)
+
         .on(
             "data",
             chunk => {
 
-                if (
-                    chunks.length < 5000
-                ) {
-
-                    chunks.push(
-                        chunk
-                    );
-                }
+                chunks.push(
+                    chunk
+                );
             }
         )
+
         .on(
             "end",
             async () => {
@@ -1527,6 +1734,10 @@ function listenToUser(
                         chunks
                     );
 
+                console.log(
+                    `🎤 END: ${userId}, ${pcmData.length} bytes`
+                );
+
                 await processVoiceAudio(
                     session,
                     userId,
@@ -1534,6 +1745,7 @@ function listenToUser(
                 );
             }
         )
+
         .on(
             "error",
             error => {
@@ -1543,7 +1755,7 @@ function listenToUser(
                 );
 
                 console.error(
-                    "❌ Ошибка обработки Discord audio:",
+                    "❌ Ошибка decoder:",
                     error
                 );
             }
@@ -1568,17 +1780,26 @@ async function startVoiceAI(
         );
     }
 
+    const guildId =
+        member.guild.id;
+
     const oldSession =
         voiceAISessions.get(
-            member.guild.id
+            guildId
         );
 
-    if (oldSession) {
+    if (
+        oldSession
+    ) {
 
         stopVoiceAI(
-            member.guild.id
+            guildId
         );
     }
+
+    console.log(
+        `🎙️ Подключаю Voice AI к ${channel.name}...`
+    );
 
     const connection =
         joinVoiceChannel({
@@ -1587,7 +1808,7 @@ async function startVoiceAI(
                 channel.id,
 
             guildId:
-                member.guild.id,
+                guildId,
 
             adapterCreator:
                 channel.guild.voiceAdapterCreator,
@@ -1608,10 +1829,11 @@ async function startVoiceAI(
 
     const session = {
 
-        active: true,
+        active:
+            true,
 
         guildId:
-            member.guild.id,
+            guildId,
 
         channelId:
             channel.id,
@@ -1619,7 +1841,9 @@ async function startVoiceAI(
         voiceConnection:
             connection,
 
-        player,
+        player:
+
+            player,
 
         subscriptions:
             new Map(),
@@ -1629,7 +1853,7 @@ async function startVoiceAI(
     };
 
     voiceAISessions.set(
-        member.guild.id,
+        guildId,
         session
     );
 
@@ -1639,6 +1863,10 @@ async function startVoiceAI(
 
             console.log(
                 `✓ Voice AI подключён к ${channel.name}`
+            );
+
+            console.log(
+                "🎤 Voice AI теперь слушает участников."
             );
         }
     );
@@ -1658,6 +1886,16 @@ async function startVoiceAI(
         }
     );
 
+    connection.on(
+        VoiceConnectionStatus.Destroyed,
+        () => {
+
+            console.log(
+                "🔇 Voice connection уничтожен."
+            );
+        }
+    );
+
     const receiver =
         connection.receiver;
 
@@ -1668,12 +1906,15 @@ async function startVoiceAI(
             if (
                 !session.active
             ) {
+
                 return;
             }
 
             if (
-                userId === client.user.id
+                userId ===
+                client.user.id
             ) {
+
                 return;
             }
 
@@ -1683,11 +1924,26 @@ async function startVoiceAI(
                 );
 
             if (
-                !voiceMember ||
-                voiceMember.user.bot
+                !voiceMember
             ) {
+
+                console.log(
+                    `⚠️ Не найден участник ${userId} в канале.`
+                );
+
                 return;
             }
+
+            if (
+                voiceMember.user.bot
+            ) {
+
+                return;
+            }
+
+            console.log(
+                `🗣️ Пользователь начал говорить: ${voiceMember.user.username}`
+            );
 
             listenToUser(
                 session,
@@ -1713,10 +1969,12 @@ function stopVoiceAI(
         );
 
     if (!session) {
+
         return false;
     }
 
-    session.active = false;
+    session.active =
+        false;
 
     for (
         const stream of
@@ -1724,18 +1982,24 @@ function stopVoiceAI(
     ) {
 
         try {
+
             stream.destroy();
+
         } catch {}
     }
 
     session.subscriptions.clear();
 
     try {
+
         session.player.stop();
+
     } catch {}
 
     try {
+
         session.voiceConnection.destroy();
+
     } catch {}
 
     voiceAISessions.delete(
@@ -1755,13 +2019,11 @@ function stopVoiceAI(
 
 const commands = [
 
-    // ==========================
-    // /STATS
-    // ==========================
-
     new SlashCommandBuilder()
 
-        .setName("stats")
+        .setName(
+            "stats"
+        )
 
         .setDescription(
             "Показать статистику пользователя"
@@ -1770,22 +2032,25 @@ const commands = [
         .addUserOption(
             option =>
                 option
-                    .setName("user")
+
+                    .setName(
+                        "user"
+                    )
 
                     .setDescription(
                         "Пользователь"
                     )
 
-                    .setRequired(false)
+                    .setRequired(
+                        false
+                    )
         ),
-
-    // ==========================
-    // /AI
-    // ==========================
 
     new SlashCommandBuilder()
 
-        .setName("ai")
+        .setName(
+            "ai"
+        )
 
         .setDescription(
             "Задать вопрос нейросети"
@@ -1794,34 +2059,35 @@ const commands = [
         .addStringOption(
             option =>
                 option
-                    .setName("prompt")
+
+                    .setName(
+                        "prompt"
+                    )
 
                     .setDescription(
                         "Ваш запрос к нейросети"
                     )
 
-                    .setRequired(true)
+                    .setRequired(
+                        true
+                    )
         ),
-
-    // ==========================
-    // /VOICEAI
-    // ==========================
 
     new SlashCommandBuilder()
 
-        .setName("voiceai")
+        .setName(
+            "voiceai"
+        )
 
         .setDescription(
             "Включить голосовую нейросеть"
         ),
 
-    // ==========================
-    // /VOICEAI-STOP
-    // ==========================
-
     new SlashCommandBuilder()
 
-        .setName("voiceai-stop")
+        .setName(
+            "voiceai-stop"
+        )
 
         .setDescription(
             "Выключить голосовую нейросеть"
@@ -1840,7 +2106,8 @@ async function registerCommands() {
 
     const rest =
         new REST({
-            version: "10"
+            version:
+                "10"
         }).setToken(
             TOKEN
         );
@@ -1853,12 +2120,29 @@ async function registerCommands() {
         ),
 
         {
-            body: commands
+            body:
+                commands
         }
     );
 
     console.log(
-        "✓ /stats, /ai, /voiceai и /voiceai-stop зарегистрированы"
+        "✓ Команды зарегистрированы:"
+    );
+
+    console.log(
+        "  /stats"
+    );
+
+    console.log(
+        "  /ai"
+    );
+
+    console.log(
+        "  /voiceai"
+    );
+
+    console.log(
+        "  /voiceai-stop"
     );
 }
 
@@ -1873,6 +2157,7 @@ client.on(
         if (
             !interaction.isChatInputCommand()
         ) {
+
             return;
         }
 
@@ -1890,7 +2175,8 @@ client.on(
             const target =
                 interaction.options.getUser(
                     "user"
-                ) || interaction.user;
+                ) ||
+                interaction.user;
 
             const data =
                 getUser(
@@ -1915,6 +2201,7 @@ client.on(
                     );
 
                 await interaction.editReply({
+
                     files: [
                         attachment
                     ]
@@ -2058,12 +2345,15 @@ client.on(
                     return;
                 }
 
+                const channelName =
+                    member.voice.channel.name;
+
                 await startVoiceAI(
                     member
                 );
 
                 await interaction.editReply(
-                    `🎙️ Голосовая нейронка включена в **${member.voice.channel.name}**.\n\nГовори — я буду слушать и отвечать голосом.`
+                    `🎙️ Голосовая нейронка включена в **${channelName}**.\n\nГовори обычным голосом — бот будет слушать и отвечать.`
                 );
 
             } catch (error) {
@@ -2167,6 +2457,7 @@ client.once(
                 if (
                     member.user.bot
                 ) {
+
                     continue;
                 }
 
@@ -2178,10 +2469,6 @@ client.once(
                         member.id
                     );
 
-                // ==========================
-                // DISCORD ONLINE
-                // ==========================
-
                 if (
                     presenceIsOnline(
                         presence
@@ -2192,10 +2479,6 @@ client.once(
                     data.discordStartedAt =
                         Date.now();
                 }
-
-                // ==========================
-                // GAME
-                // ==========================
 
                 const game =
                     presence?.activities?.find(
@@ -2215,10 +2498,6 @@ client.once(
                     data.gamingStartedAt =
                         Date.now();
                 }
-
-                // ==========================
-                // VOICE
-                // ==========================
 
                 for (
                     const channel of
