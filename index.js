@@ -155,7 +155,7 @@ function formatTime(seconds) {
 function calculateCurrent(baseSeconds, startTime) {
     if (!startTime) return baseSeconds || 0;
     const diff = Math.floor((Date.now() - startTime) / 1000);
-    return (baseSeconds || 0) + (diff > 0 ? diff : 0); // Защита от отрицательного времени
+    return (baseSeconds || 0) + (diff > 0 ? diff : 0);
 }
 
 function currentVoiceSeconds(data) { return calculateCurrent(data.voiceSeconds, data.voiceStartedAt); }
@@ -209,7 +209,6 @@ client.on("presenceUpdate", (oldPresence, newPresence) => {
 
     const data = getUser(newPresence.userId);
 
-    // 1. Онлайн статус
     const online = presenceIsOnline(newPresence);
     if (online && !data.discordStartedAt) {
         data.discordStartedAt = Date.now();
@@ -217,7 +216,6 @@ client.on("presenceUpdate", (oldPresence, newPresence) => {
         finalizeDiscord(data);
     }
 
-    // 2. Игровая активность
     const gameActivity = newPresence.activities?.find(activity => activity.type === ActivityType.Playing);
     const gameName = gameActivity?.name || null;
 
@@ -244,7 +242,6 @@ setInterval(() => saveStats(), 30000);
 
 function drawCentered(ctx, text, x, y, maxWidth, color, size) {
     ctx.save();
-    // ИСПОЛЬЗУЕМ ЗАГРУЖЕННЫЙ ШРИФТ, ИНАЧЕ ФОЛЛБЭК
     ctx.font = `bold ${size}px "CustomFont", sans-serif`; 
     ctx.fillStyle = color;
     ctx.textAlign = "center";
@@ -263,42 +260,35 @@ function drawStatBadge(ctx, x, y, w, h, value, color) {
     
     const rx = x - w / 2;
     const ry = y - h / 2;
-    const radius = 22; // Идеальное скругление
+    const radius = 22;
 
-    // Эффект свечения для рамки
     ctx.shadowColor = color;
     ctx.shadowBlur = 15;
     ctx.shadowOffsetY = 0;
 
-    // Темная полупрозрачная подложка
     ctx.fillStyle = "rgba(10, 10, 10, 0.88)";
     ctx.beginPath();
     ctx.roundRect(rx, ry, w, h, radius);
     ctx.fill();
 
-    // Снимаем свечение для четкой рамки
     ctx.shadowBlur = 0;
 
-    // Цветная рамка
     ctx.strokeStyle = color;
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.roundRect(rx, ry, w, h, radius);
     ctx.stroke();
 
-    // Настройки текста
     ctx.font = `bold 28px "CustomFont", sans-serif`;
     ctx.fillStyle = "#FFFFFF";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
-    // Плотная тень под текстом (чтобы не сливалось)
     ctx.shadowColor = "rgba(0, 0, 0, 1)";
     ctx.shadowBlur = 6;
     ctx.shadowOffsetY = 2;
 
-    // Выводим значение
-    ctx.fillText(String(value), x, y, w - 20); // w-20 защита от вылезания текста за рамки
+    ctx.fillText(String(value), x, y, w - 20);
     ctx.restore();
 }
 
@@ -310,11 +300,9 @@ async function generateCard(user, data) {
     const canvas = createCanvas(WIDTH, HEIGHT);
     const ctx = canvas.getContext("2d");
 
-    // Берем шаблон из кэша (мгновенно!)
     const template = await getTemplateImage();
     ctx.drawImage(template, 0, 0, WIDTH, HEIGHT);
 
-    // Подложка под ник
     ctx.save();
     ctx.fillStyle = "rgba(10, 10, 10, 0.65)";
     ctx.beginPath();
@@ -322,10 +310,8 @@ async function generateCard(user, data) {
     ctx.fill();
     ctx.restore();
 
-    // Никнейм
     drawCentered(ctx, user.username, POS.username.x, POS.username.y - 5, 550, "#ffffff", 52);
 
-    // Подготовка текста статистики
     const voiceSec = currentVoiceSeconds(data);
     const voiceText = voiceSec > 0 ? formatTime(voiceSec) : "0m";
     const messagesText = String(data.messages || 0);
@@ -338,11 +324,10 @@ async function generateCard(user, data) {
         ? `${data.gamingGame} • ${gamingTime}` 
         : (activeGamingSec > 0 ? gamingTime : "0m");
 
-    // Рисуем плашки
     drawStatBadge(ctx, POS.voice.x, POS.voice.y, 250, 68, voiceText, POS.voice.color);
     drawStatBadge(ctx, POS.message.x, POS.message.y, 250, 68, messagesText, POS.message.color);
     drawStatBadge(ctx, POS.discord.x, POS.discord.y, 250, 68, discordText, POS.discord.color);
-    drawStatBadge(ctx, POS.gaming.x, POS.gaming.y, 320, 68, gamingText, POS.gaming.color); // Играм нужно больше места
+    drawStatBadge(ctx, POS.gaming.x, POS.gaming.y, 320, 68, gamingText, POS.gaming.color);
     drawStatBadge(ctx, POS.music.x, POS.music.y, 250, 68, "SOON", POS.music.color);
 
     return canvas.toBuffer("image/png");
@@ -358,36 +343,84 @@ const commands = [
         .setDescription("Показать статистику пользователя")
         .addUserOption(option =>
             option.setName("user").setDescription("Пользователь").setRequired(false)
+        ),
+    // Добавили команду /troll в общий список
+    new SlashCommandBuilder()
+        .setName("troll")
+        .setDescription("Потроллить бота")
+        .addStringOption(option =>
+            option
+                .setName("text")
+                .setDescription("Текст для троллинга")
+                .setRequired(true)
         )
 ].map(command => command.toJSON());
 
 async function registerCommands() {
     const rest = new REST({ version: "10" }).setToken(TOKEN);
     await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
-    console.log("✓ /stats зарегистрирована");
+    console.log("✓ Команды (/stats, /troll) зарегистрированы");
 }
 
 client.on("interactionCreate", async interaction => {
-    if (!interaction.isChatInputCommand() || interaction.commandName !== "stats") return;
-    
-    await interaction.deferReply();
-    const target = interaction.options.getUser("user") || interaction.user;
-    const data = getUser(target.id);
+    if (!interaction.isChatInputCommand()) return;
 
-    try {
-        const imageBuffer = await generateCard(target, data);
-        const attachment = new AttachmentBuilder(imageBuffer, { name: "stats.png" });
-        await interaction.editReply({ files: [attachment] });
-    } catch (error) {
-        console.error("❌ Ошибка при генерации карточки:", error);
-        await interaction.editReply("Упс, произошла ошибка при создании карточки. Проверьте логи бота.");
+    // Обработка команды /stats
+    if (interaction.commandName === "stats") {
+        await interaction.deferReply();
+        const target = interaction.options.getUser("user") || interaction.user;
+        const data = getUser(target.id);
+
+        try {
+            const imageBuffer = await generateCard(target, data);
+            const attachment = new AttachmentBuilder(imageBuffer, { name: "stats.png" });
+            await interaction.editReply({ files: [attachment] });
+        } catch (error) {
+            console.error("❌ Ошибка при генерации карточки:", error);
+            await interaction.editReply("Упс, произошла ошибка при создании карточки. Проверьте логи бота.");
+        }
+        return;
+    }
+
+    // Обработка команды /troll с процедурной генерацией ответов
+    if (interaction.commandName === "troll") {
+        const userText = interaction.options.getString("text");
+
+        const actions = [
+            "Иди", "Чел, иди", "Слышь, иди", "Лучше иди", 
+            "Завались и иди", "Меньше базарь и иди", "Вытри сопли и иди",
+            "Шел бы ты", "Хватит ныть, иди"
+        ];
+        
+        const directions = [
+            "нахуй", "в окно", "уроки учить", "траву потрогать", 
+            "поспать", "своей мамке помогать", "в будку", 
+            "к зеркалу поплакать", "удалить Discord"
+        ];
+
+        const modifiers = [
+            `с таким бредом: "${userText}"`,
+            `пока я твой текст "${userText}" не аннигилировал`,
+            `со своими отговорками про "${userText}"`,
+            `с этой парашей в голове`,
+            `пока тебе интернет по талонам не отключили`,
+            `и не позорься со своим "${userText}"`,
+            `и перевари то, что высрал`
+        ];
+
+        const randomAction = actions[Math.floor(Math.random() * actions.length)];
+        const randomDirection = directions[Math.floor(Math.random() * directions.length)];
+        const randomModifier = modifiers[Math.floor(Math.random() * modifiers.length)];
+
+        const generatedResponse = `${randomAction} ${randomDirection} ${randomModifier}!`;
+
+        await interaction.reply({ content: generatedResponse });
     }
 });
 
 client.once("ready", async () => {
     console.log(`✓ Бот запущен: ${client.user.tag}`);
     
-    // Предзагрузка шаблона в память при старте
     await getTemplateImage();
     console.log("✓ Шаблон закэширован!");
 
