@@ -27,17 +27,15 @@ const WIDTH = 1536;
 const HEIGHT = 1536;
 
 // ==============================
-// TEXT POSITIONS
-// ==============================
-
-const POS = {
+// TEXT const POS = {
     username: { x: 768, y: 105 },
 
-    voice:   { x: 128,  y: 965, color: "#ff4b4b" },
-    message: { x: 380,  y: 965, color: "#55a8ff" },
-    discord: { x: 625,  y: 965, color: "#c080ff" },
-    gaming:  { x: 870,  y: 965, color: "#43ff91" },
-    music:   { x: 1260, y: 965, color: "#ffd84a" }
+    voice:   { x: 128,  y: 1040, color: "#ff4b4b" },
+    message: { x: 380,  y: 1040, color: "#55a8ff" },
+    discord: { x: 625,  y: 1040, color: "#c080ff" },
+    gaming:  { x: 870,  y: 1040, color: "#43ff91" },
+    music:   { x: 1260, y: 1040, color: "#ffd84a" }
+};
 };
 
 const client = new Client({
