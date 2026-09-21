@@ -8,7 +8,8 @@ const {
     ActivityType
 } = require("discord.js");
 
-const { createCanvas, loadImage } = require("@napi-rs/canvas");
+// Добавлен GlobalFonts для загрузки кастомного шрифта!
+const { createCanvas, loadImage, GlobalFonts } = require("@napi-rs/canvas");
 const fs = require("fs");
 const path = require("path");
 
@@ -22,9 +23,20 @@ const GUILD_ID = process.env.GUILD_ID;
 
 const TEMPLATE = path.join(__dirname, "template.png");
 const STORAGE = path.join(__dirname, "stats.json");
+const FONT_PATH = path.join(__dirname, "font.ttf");
 
 const WIDTH = 1536;
 const HEIGHT = 1536;
+
+// ==============================
+// РЕГИСТРАЦИЯ ШРИФТА (ФИКС RAILWAY)
+// ==============================
+if (fs.existsSync(FONT_PATH)) {
+    GlobalFonts.registerFromPath(FONT_PATH, "CustomFont");
+    console.log("✓ Кастомный шрифт успешно загружен!");
+} else {
+    console.warn("❌ ВНИМАНИЕ: Файл font.ttf не найден! Без него Railway не покажет текст.");
+}
 
 // ==============================
 // TEXT POSITIONS & COLORS
@@ -32,7 +44,6 @@ const HEIGHT = 1536;
 
 const POS = {
     username: { x: 768, y: 105 },
-
     voice:   { x: 154,  y: 1350, color: "#ff4b4b" }, // Красный
     message: { x: 461,  y: 1350, color: "#55a8ff" }, // Синий
     discord: { x: 768,  y: 1350, color: "#c080ff" }, // Фиолетовый
@@ -50,6 +61,17 @@ const client = new Client({
         GatewayIntentBits.GuildPresences
     ]
 });
+
+// ==============================
+// КЭШИРОВАНИЕ ФОНА (ОПТИМИЗАЦИЯ СКОРОСТИ)
+// ==============================
+let cachedTemplate = null;
+async function getTemplateImage() {
+    if (!cachedTemplate) {
+        cachedTemplate = await loadImage(await fs.promises.readFile(TEMPLATE));
+    }
+    return cachedTemplate;
+}
 
 // ==============================
 // JSON STORAGE & DAILY RESET
@@ -84,7 +106,6 @@ function loadStats() {
             }
             db.lastDate = today;
         }
-
         return db;
     } catch {
         return { lastDate: getTodayDateString(), users: {} };
@@ -111,16 +132,16 @@ function getUser(id) {
             gamingStartedAt: null
         };
     }
-
     return db.users[id];
 }
 
 // ==============================
-// HELPERS
+// HELPERS (С БЕЗОПАСНЫМИ ПРОВЕРКАМИ)
 // ==============================
 
 function formatTime(seconds) {
     seconds = Math.max(0, Math.floor(seconds));
+    if (isNaN(seconds)) return "0m";
 
     const days = Math.floor(seconds / 86400);
     const hours = Math.floor((seconds % 86400) / 3600);
@@ -128,295 +149,207 @@ function formatTime(seconds) {
 
     if (days > 0) return `${days}d ${hours}h`;
     if (hours > 0) return `${hours}h ${minutes}m`;
-
     return `${minutes}m`;
 }
 
-function currentVoiceSeconds(data) {
-    if (!data.voiceStartedAt) return data.voiceSeconds || 0;
-    return (data.voiceSeconds || 0) + Math.floor((Date.now() - data.voiceStartedAt) / 1000);
+function calculateCurrent(baseSeconds, startTime) {
+    if (!startTime) return baseSeconds || 0;
+    const diff = Math.floor((Date.now() - startTime) / 1000);
+    return (baseSeconds || 0) + (diff > 0 ? diff : 0); // Защита от отрицательного времени
 }
 
-function currentDiscordSeconds(data) {
-    if (!data.discordStartedAt) return data.discordSeconds || 0;
-    return (data.discordSeconds || 0) + Math.floor((Date.now() - data.discordStartedAt) / 1000);
-}
-
-function currentGamingSeconds(data) {
-    if (!data.gamingStartedAt) return data.gamingSeconds || 0;
-    return (data.gamingSeconds || 0) + Math.floor((Date.now() - data.gamingStartedAt) / 1000);
-}
+function currentVoiceSeconds(data) { return calculateCurrent(data.voiceSeconds, data.voiceStartedAt); }
+function currentDiscordSeconds(data) { return calculateCurrent(data.discordSeconds, data.discordStartedAt); }
+function currentGamingSeconds(data) { return calculateCurrent(data.gamingSeconds, data.gamingStartedAt); }
 
 function finalizeVoice(data) {
-    if (!data.voiceStartedAt) return;
-    data.voiceSeconds = (data.voiceSeconds || 0) + Math.floor((Date.now() - data.voiceStartedAt) / 1000);
+    data.voiceSeconds = currentVoiceSeconds(data);
     data.voiceStartedAt = null;
 }
-
 function finalizeDiscord(data) {
-    if (!data.discordStartedAt) return;
-    data.discordSeconds = (data.discordSeconds || 0) + Math.floor((Date.now() - data.discordStartedAt) / 1000);
+    data.discordSeconds = currentDiscordSeconds(data);
     data.discordStartedAt = null;
 }
-
 function finalizeGaming(data) {
-    if (!data.gamingStartedAt) return;
-    data.gamingSeconds = (data.gamingSeconds || 0) + Math.floor((Date.now() - data.gamingStartedAt) / 1000);
+    data.gamingSeconds = currentGamingSeconds(data);
     data.gamingStartedAt = null;
     data.gamingGame = null;
 }
 
 // ==============================
-// MESSAGE TRACKING
+// TRACKING EVENTS
 // ==============================
 
 client.on("messageCreate", message => {
-    // Безопасная проверка на ботов и отсутствие гильдии
     if (!message.guild || !message.author || message.author.bot) return;
-
     const data = getUser(message.author.id);
     data.messages = (data.messages || 0) + 1;
     saveStats();
 });
 
-// ==============================
-// VOICE TRACKING
-// ==============================
-
 client.on("voiceStateUpdate", (oldState, newState) => {
-    // Безопасная проверка (если участник не загрузился в кеш)
     if (!newState.member || newState.member.user.bot) return;
-
     const data = getUser(newState.id);
 
     if (!oldState.channelId && newState.channelId) {
-        if (!data.voiceStartedAt) {
-            data.voiceStartedAt = Date.now();
-        }
+        if (!data.voiceStartedAt) data.voiceStartedAt = Date.now();
     }
-
     if (oldState.channelId && !newState.channelId) {
         finalizeVoice(data);
     }
-
     saveStats();
 });
 
-// ==============================
-// GAMING TRACKING
-// ==============================
-
-client.on("presenceUpdate", (oldPresence, newPresence) => {
-    if (!newPresence?.userId || !newPresence.member) return;
-    if (newPresence.member.user.bot) return;
-
-    const data = getUser(newPresence.userId);
-
-    const gameActivity = newPresence.activities?.find(
-        activity => activity.type === ActivityType.Playing
-    );
-
-    const gameName = gameActivity?.name || null;
-
-    if (!gameName) {
-        finalizeGaming(data);
-        saveStats();
-        return;
-    }
-
-    if (!data.gamingStartedAt) {
-        data.gamingGame = gameName;
-        data.gamingStartedAt = Date.now();
-        saveStats();
-        return;
-    }
-
-    if (data.gamingGame !== gameName) {
-        finalizeGaming(data);
-        data.gamingGame = gameName;
-        data.gamingStartedAt = Date.now();
-        saveStats();
-    }
-});
-
-// ==============================
-// DISCORD ONLINE TRACKING
-// ==============================
-
 function presenceIsOnline(presence) {
-    if (!presence) return false;
-    return ["online", "idle", "dnd"].includes(presence.status);
+    return presence && ["online", "idle", "dnd"].includes(presence.status);
 }
 
 client.on("presenceUpdate", (oldPresence, newPresence) => {
-    if (!newPresence?.userId || !newPresence.member) return;
-    if (newPresence.member.user.bot) return;
+    if (!newPresence?.userId || !newPresence.member || newPresence.member.user.bot) return;
 
     const data = getUser(newPresence.userId);
-    const online = presenceIsOnline(newPresence);
 
+    // 1. Онлайн статус
+    const online = presenceIsOnline(newPresence);
     if (online && !data.discordStartedAt) {
         data.discordStartedAt = Date.now();
-        saveStats();
+    } else if (!online && data.discordStartedAt) {
+        finalizeDiscord(data);
     }
 
-    if (!online && data.discordStartedAt) {
-        finalizeDiscord(data);
-        saveStats();
+    // 2. Игровая активность
+    const gameActivity = newPresence.activities?.find(activity => activity.type === ActivityType.Playing);
+    const gameName = gameActivity?.name || null;
+
+    if (!gameName) {
+        if (data.gamingStartedAt) finalizeGaming(data);
+    } else {
+        if (!data.gamingStartedAt) {
+            data.gamingGame = gameName;
+            data.gamingStartedAt = Date.now();
+        } else if (data.gamingGame !== gameName) {
+            finalizeGaming(data);
+            data.gamingGame = gameName;
+            data.gamingStartedAt = Date.now();
+        }
     }
+    saveStats();
 });
 
-// ==============================
-// PERIODIC SAVE
-// ==============================
-
-setInterval(() => {
-    saveStats();
-}, 30000);
+setInterval(() => saveStats(), 30000);
 
 // ==============================
-// IMAGE HELPERS
+// IMAGE RENDERING HELPERS
 // ==============================
 
 function drawCentered(ctx, text, x, y, maxWidth, color, size) {
     ctx.save();
-    ctx.font = `bold ${size}px sans-serif`;
+    // ИСПОЛЬЗУЕМ ЗАГРУЖЕННЫЙ ШРИФТ, ИНАЧЕ ФОЛЛБЭК
+    ctx.font = `bold ${size}px "CustomFont", sans-serif`; 
     ctx.fillStyle = color;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
-    // Мощная тень для имени пользователя
-    ctx.shadowColor = "rgba(0, 0, 0, 0.9)";
-    ctx.shadowBlur = 10;
+    ctx.shadowColor = "rgba(0, 0, 0, 1)";
+    ctx.shadowBlur = 12;
     ctx.shadowOffsetY = 4;
 
     ctx.fillText(text, x, y, maxWidth);
     ctx.restore();
 }
 
-// ==============================
-// STATISTIC BADGE (СОВРЕМЕННЫЙ ДИЗАЙН)
-// ==============================
-
 function drawStatBadge(ctx, x, y, w, h, value, color) {
-    ctx.save(); // Сохраняем состояние канваса, чтобы стили не смешивались
+    ctx.save(); 
     
     const rx = x - w / 2;
     const ry = y - h / 2;
-    const radius = 20; // Более плавные, "модные" края
+    const radius = 22; // Идеальное скругление
 
-    // 1. Создаем эффект неонового свечения для плашки
+    // Эффект свечения для рамки
     ctx.shadowColor = color;
-    ctx.shadowBlur = 12;
-    ctx.shadowOffsetX = 0;
+    ctx.shadowBlur = 15;
     ctx.shadowOffsetY = 0;
 
-    // 2. Рисуем темный фон плашки
-    ctx.fillStyle = "rgba(12, 12, 12, 0.9)"; // Почти черный, слегка прозрачный
+    // Темная полупрозрачная подложка
+    ctx.fillStyle = "rgba(10, 10, 10, 0.88)";
     ctx.beginPath();
     ctx.roundRect(rx, ry, w, h, radius);
     ctx.fill();
 
-    // 3. Отключаем свечение, чтобы обводка была четкой
+    // Снимаем свечение для четкой рамки
     ctx.shadowBlur = 0;
 
-    // 4. Рисуем цветную рамку
+    // Цветная рамка
     ctx.strokeStyle = color;
-    ctx.lineWidth = 2.5;
+    ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.roundRect(rx, ry, w, h, radius);
     ctx.stroke();
 
-    // 5. Настраиваем шрифт и тень для текста
-    ctx.font = "bold 26px sans-serif";
+    // Настройки текста
+    ctx.font = `bold 28px "CustomFont", sans-serif`;
     ctx.fillStyle = "#FFFFFF";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
-    // Четкая черная тень под текстом для идеальной читаемости
+    // Плотная тень под текстом (чтобы не сливалось)
     ctx.shadowColor = "rgba(0, 0, 0, 1)";
-    ctx.shadowBlur = 4;
+    ctx.shadowBlur = 6;
     ctx.shadowOffsetY = 2;
 
-    // Выводим текст
-    ctx.fillText(String(value), x, y);
-
-    ctx.restore(); // Сбрасываем все тени и шрифты в исходное состояние
+    // Выводим значение
+    ctx.fillText(String(value), x, y, w - 20); // w-20 защита от вылезания текста за рамки
+    ctx.restore();
 }
 
 // ==============================
-// GENERATE CARD
+// ГЕНЕРАЦИЯ КАРТОЧКИ
 // ==============================
 
 async function generateCard(user, data) {
     const canvas = createCanvas(WIDTH, HEIGHT);
     const ctx = canvas.getContext("2d");
 
-    // Читаем фоновую картинку
-    const template = await loadImage(
-        await fs.promises.readFile(TEMPLATE)
-    );
+    // Берем шаблон из кэша (мгновенно!)
+    const template = await getTemplateImage();
     ctx.drawImage(template, 0, 0, WIDTH, HEIGHT);
 
-    // ==========================
-    // USERNAME BACKGROUND
-    // ==========================
+    // Подложка под ник
     ctx.save();
-    ctx.fillStyle = "rgba(10, 10, 10, 0.6)";
+    ctx.fillStyle = "rgba(10, 10, 10, 0.65)";
     ctx.beginPath();
-    // Используем встроенный roundRect для подложки под ник
-    ctx.roundRect(470, 35, 600, 90, 25);
+    ctx.roundRect(470, 35, 600, 90, 30);
     ctx.fill();
     ctx.restore();
 
-    // ==========================
-    // USERNAME TEXT
-    // ==========================
-    drawCentered(
-        ctx,
-        user.username,
-        POS.username.x,
-        POS.username.y - 5,
-        550, // Максимальная ширина, чтобы длинные ники сжимались
-        "#ffffff",
-        48
-    );
+    // Никнейм
+    drawCentered(ctx, user.username, POS.username.x, POS.username.y - 5, 550, "#ffffff", 52);
 
-    // ==========================
-    // CALCULATE STATISTICS
-    // ==========================
-
+    // Подготовка текста статистики
     const voiceSec = currentVoiceSeconds(data);
-    const voice = voiceSec > 0 ? formatTime(voiceSec) : "0m";
-
-    const messages = String(data.messages || 0);
-
+    const voiceText = voiceSec > 0 ? formatTime(voiceSec) : "0m";
+    const messagesText = String(data.messages || 0);
     const discordSec = currentDiscordSeconds(data);
-    const discord = discordSec > 0 ? formatTime(discordSec) : "0m";
+    const discordText = discordSec > 0 ? formatTime(discordSec) : "0m";
     
     const activeGamingSec = currentGamingSeconds(data);
     const gamingTime = formatTime(activeGamingSec);
-
-    const gamingText = data.gamingGame && activeGamingSec > 0
-        ? `${data.gamingGame} • ${gamingTime}`
+    const gamingText = data.gamingGame && activeGamingSec > 0 
+        ? `${data.gamingGame} • ${gamingTime}` 
         : (activeGamingSec > 0 ? gamingTime : "0m");
 
-    // ==========================
-    // DRAW STATISTIC BADGES
-    // ==========================
-
-    drawStatBadge(ctx, POS.voice.x, POS.voice.y, 250, 64, voice, POS.voice.color);
-    drawStatBadge(ctx, POS.message.x, POS.message.y, 250, 64, messages, POS.message.color);
-    drawStatBadge(ctx, POS.discord.x, POS.discord.y, 250, 64, discord, POS.discord.color);
-    // Плашка с игрой сделана чуть шире (300px), чтобы помещалось название
-    drawStatBadge(ctx, POS.gaming.x, POS.gaming.y, 300, 64, gamingText, POS.gaming.color);
-    drawStatBadge(ctx, POS.music.x, POS.music.y, 250, 64, "SOON", POS.music.color);
+    // Рисуем плашки
+    drawStatBadge(ctx, POS.voice.x, POS.voice.y, 250, 68, voiceText, POS.voice.color);
+    drawStatBadge(ctx, POS.message.x, POS.message.y, 250, 68, messagesText, POS.message.color);
+    drawStatBadge(ctx, POS.discord.x, POS.discord.y, 250, 68, discordText, POS.discord.color);
+    drawStatBadge(ctx, POS.gaming.x, POS.gaming.y, 320, 68, gamingText, POS.gaming.color); // Играм нужно больше места
+    drawStatBadge(ctx, POS.music.x, POS.music.y, 250, 68, "SOON", POS.music.color);
 
     return canvas.toBuffer("image/png");
 }
 
 // ==============================
-// SLASH COMMAND
+// ИНИЦИАЛИЗАЦИЯ БОТА И КОМАНД
 // ==============================
 
 const commands = [
@@ -424,57 +357,39 @@ const commands = [
         .setName("stats")
         .setDescription("Показать статистику пользователя")
         .addUserOption(option =>
-            option
-                .setName("user")
-                .setDescription("Пользователь")
-                .setRequired(false)
+            option.setName("user").setDescription("Пользователь").setRequired(false)
         )
 ].map(command => command.toJSON());
 
-// ==============================
-// REGISTER COMMANDS
-// ==============================
-
 async function registerCommands() {
     const rest = new REST({ version: "10" }).setToken(TOKEN);
-
-    await rest.put(
-        Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID),
-        { body: commands }
-    );
-
+    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), { body: commands });
     console.log("✓ /stats зарегистрирована");
 }
 
-// ==============================
-// COMMAND HANDLER
-// ==============================
-
 client.on("interactionCreate", async interaction => {
-    if (!interaction.isChatInputCommand()) return;
-    if (interaction.commandName !== "stats") return;
-
+    if (!interaction.isChatInputCommand() || interaction.commandName !== "stats") return;
+    
     await interaction.deferReply();
-
     const target = interaction.options.getUser("user") || interaction.user;
     const data = getUser(target.id);
 
     try {
-        const image = await generateCard(target, data);
-        const attachment = new AttachmentBuilder(image, { name: "stats.png" });
+        const imageBuffer = await generateCard(target, data);
+        const attachment = new AttachmentBuilder(imageBuffer, { name: "stats.png" });
         await interaction.editReply({ files: [attachment] });
     } catch (error) {
-        console.error("Ошибка при генерации карточки:", error);
-        await interaction.editReply("Произошла ошибка при создании картинки.");
+        console.error("❌ Ошибка при генерации карточки:", error);
+        await interaction.editReply("Упс, произошла ошибка при создании карточки. Проверьте логи бота.");
     }
 });
 
-// ==============================
-// READY
-// ==============================
-
 client.once("ready", async () => {
     console.log(`✓ Бот запущен: ${client.user.tag}`);
+    
+    // Предзагрузка шаблона в память при старте
+    await getTemplateImage();
+    console.log("✓ Шаблон закэширован!");
 
     for (const guild of client.guilds.cache.values()) {
         await guild.members.fetch();
@@ -489,38 +404,28 @@ client.once("ready", async () => {
                 data.discordStartedAt = Date.now();
             }
 
-            const game = presence?.activities?.find(
-                activity => activity.type === ActivityType.Playing
-            );
-
+            const game = presence?.activities?.find(activity => activity.type === ActivityType.Playing);
             if (game?.name && !data.gamingStartedAt) {
                 data.gamingGame = game.name;
                 data.gamingStartedAt = Date.now();
             }
 
-            for (const [channelId, channel] of guild.channels.cache) {
+            for (const channel of guild.channels.cache.values()) {
                 if (channel.isVoiceBased() && channel.members.has(member.id)) {
-                    if (!data.voiceStartedAt) {
-                        data.voiceStartedAt = Date.now();
-                    }
+                    if (!data.voiceStartedAt) data.voiceStartedAt = Date.now();
                 }
             }
         }
     }
-
     saveStats();
     console.log("✓ Активные сессии успешно восстановлены!");
 });
-
-// ==============================
-// START BOT
-// ==============================
 
 (async () => {
     try {
         await registerCommands();
         await client.login(TOKEN);
     } catch (error) {
-        console.error("Ошибка запуска:", error);
+        console.error("❌ Критическая ошибка запуска:", error);
     }
 })();
