@@ -295,7 +295,7 @@ function roundedRect(ctx, x, y, w, h, r) {
 }
 
 function drawCentered(ctx, text, x, y, maxWidth, color, size) {
-    ctx.font = `bold ${size}px Arial`;
+    ctx.font = `bold ${size}px sans-serif`;
     ctx.fillStyle = color;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -312,24 +312,33 @@ function drawCentered(ctx, text, x, y, maxWidth, color, size) {
 }
 
 // ==============================
-// STATISTIC BADGE (С ГАРАНТИРОВАННЫМ ОТОБРАЖЕНИЕМ ТЕКСТА)
+// STATISTIC BADGE
 // ==============================
 
 function drawStatBadge(ctx, x, y, w, h, value, color) {
-    ctx.save();
-
-    ctx.fillStyle = "rgba(0,0,0,0.7)";
-    roundedRect(ctx, x - w / 2, y - h / 2, w, h, 18);
+    ctx.fillStyle = "rgba(10, 10, 10, 0.85)";
+    ctx.beginPath();
+    ctx.roundRect(x - w / 2, y - h / 2, w, h, 16);
     ctx.fill();
 
     ctx.strokeStyle = color;
     ctx.lineWidth = 3;
-    ctx.globalAlpha = 0.9;
     ctx.stroke();
 
-    ctx.restore();
+    ctx.font = "bold 24px sans-serif";
+    ctx.fillStyle = "#FFFFFF";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
 
-    drawCentered(ctx, String(value), x, y, w - 20, "#ffffff", 24);
+    ctx.shadowColor = "rgba(0,0,0,0.8)";
+    ctx.shadowBlur = 6;
+    ctx.shadowOffsetY = 2;
+
+    ctx.fillText(String(value), x, y);
+
+    ctx.shadowColor = "transparent";
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
 }
 
 // ==============================
