@@ -16,6 +16,20 @@ const {
     GlobalFonts
 } = require("@napi-rs/canvas");
 
+const {
+    joinVoiceChannel,
+    createAudioPlayer,
+    createAudioResource,
+    AudioPlayerStatus,
+    VoiceConnectionStatus,
+    EndBehaviorType,
+    StreamType
+} = require("@discordjs/voice");
+
+const prism = require("prism-media");
+const { spawn } = require("child_process");
+const ffmpegPath = require("ffmpeg-static");
+
 const fs = require("fs");
 const path = require("path");
 
@@ -41,6 +55,24 @@ const HEIGHT = 1536;
 const gemini = new GoogleGenAI({
     apiKey: process.env.GEMINI_API_KEY
 });
+
+// ==============================
+// VOICE AI
+// ==============================
+
+const voiceAISessions = new Map();
+
+const VOICE_AI_TEXT_MODEL =
+    "gemini-2.5-flash-lite";
+
+const VOICE_AI_TTS_MODEL =
+    "gemini-2.5-flash-preview-tts";
+
+const VOICE_AI_SYSTEM =
+    "Ты голосовой AI-помощник в Discord. " +
+    "Отвечай понятно, дружелюбно и по существу. " +
+    "Отвечай коротко, потому что ответ будет озвучен голосом. " +
+    "Не используй Markdown, таблицы и длинные списки.";
 
 // ==============================
 // РЕГИСТРАЦИЯ ШРИФТА
@@ -649,8 +681,6 @@ function drawStatBadge(
 
     const radius = 22;
 
-    // Glow
-
     ctx.shadowColor =
         color;
 
@@ -659,8 +689,6 @@ function drawStatBadge(
 
     ctx.shadowOffsetY =
         0;
-
-    // Background
 
     ctx.fillStyle =
         "rgba(10, 10, 10, 0.88)";
@@ -676,8 +704,6 @@ function drawStatBadge(
     );
 
     ctx.fill();
-
-    // Border
 
     ctx.shadowBlur = 0;
 
@@ -697,8 +723,6 @@ function drawStatBadge(
     );
 
     ctx.stroke();
-
-    // Text
 
     ctx.font =
         `bold 28px "CustomFont", sans-serif`;
@@ -762,8 +786,6 @@ async function generateCard(
         HEIGHT
     );
 
-    // Username background
-
     ctx.save();
 
     ctx.fillStyle =
@@ -783,8 +805,6 @@ async function generateCard(
 
     ctx.restore();
 
-    // Username
-
     drawCentered(
         ctx,
         user.username,
@@ -794,10 +814,6 @@ async function generateCard(
         "#ffffff",
         52
     );
-
-    // ==========================
-    // VOICE
-    // ==========================
 
     const voiceSec =
         currentVoiceSeconds(
@@ -809,18 +825,10 @@ async function generateCard(
             ? formatTime(voiceSec)
             : "0m";
 
-    // ==========================
-    // MESSAGES
-    // ==========================
-
     const messagesText =
         String(
             data.messages || 0
         );
-
-    // ==========================
-    // DISCORD
-    // ==========================
 
     const discordSec =
         currentDiscordSeconds(
@@ -831,10 +839,6 @@ async function generateCard(
         discordSec > 0
             ? formatTime(discordSec)
             : "0m";
-
-    // ==========================
-    // GAMING
-    // ==========================
 
     const activeGamingSec =
         currentGamingSeconds(
@@ -857,10 +861,6 @@ async function generateCard(
                     ? gamingTime
                     : "0m"
             );
-
-    // ==========================
-    // DRAW BADGES
-    // ==========================
 
     drawStatBadge(
         ctx,
@@ -926,7 +926,6 @@ async function askAI(prompt) {
     const response =
         await gemini.models.generateContent({
 
-            // АКТУАЛЬНАЯ МОДЕЛЬ
             model:
                 "gemini-3.5-flash-lite",
 
@@ -943,6 +942,811 @@ async function askAI(prompt) {
         response.text ||
         "Не удалось получить ответ от нейросети."
     );
+}
+
+// ==============================
+// VOICE AI — WAV
+// ==============================
+
+function createWavBuffer(
+    pcmData,
+    sampleRate = 48000,
+    channels = 2,
+    bitsPerSample = 16
+) {
+
+    const bytesPerSample =
+        bitsPerSample / 8;
+
+    const blockAlign =
+        channels * bytesPerSample;
+
+    const byteRate =
+        sampleRate * blockAlign;
+
+    const dataSize =
+        pcmData.length;
+
+    const buffer =
+        Buffer.alloc(
+            44 + dataSize
+        );
+
+    buffer.write(
+        "RIFF",
+        0
+    );
+
+    buffer.writeUInt32LE(
+        36 + dataSize,
+        4
+    );
+
+    buffer.write(
+        "WAVE",
+        8
+    );
+
+    buffer.write(
+        "fmt ",
+        12
+    );
+
+    buffer.writeUInt32LE(
+        16,
+        16
+    );
+
+    buffer.writeUInt16LE(
+        1,
+        20
+    );
+
+    buffer.writeUInt16LE(
+        channels,
+        22
+    );
+
+    buffer.writeUInt32LE(
+        sampleRate,
+        24
+    );
+
+    buffer.writeUInt32LE(
+        byteRate,
+        28
+    );
+
+    buffer.writeUInt16LE(
+        blockAlign,
+        32
+    );
+
+    buffer.writeUInt16LE(
+        bitsPerSample,
+        34
+    );
+
+    buffer.write(
+        "data",
+        36
+    );
+
+    buffer.writeUInt32LE(
+        dataSize,
+        40
+    );
+
+    pcmData.copy(
+        buffer,
+        44
+    );
+
+    return buffer;
+}
+
+// ==============================
+// VOICE AI — RESAMPLE TTS
+// ==============================
+
+function convertTtsPcmToDiscord(
+    pcm24k
+) {
+
+    return new Promise(
+        (resolve, reject) => {
+
+            const ffmpeg =
+                spawn(
+                    ffmpegPath,
+                    [
+                        "-f",
+                        "s16le",
+                        "-ar",
+                        "24000",
+                        "-ac",
+                        "1",
+                        "-i",
+                        "pipe:0",
+
+                        "-f",
+                        "s16le",
+                        "-ar",
+                        "48000",
+                        "-ac",
+                        "2",
+                        "pipe:1"
+                    ],
+                    {
+                        stdio: [
+                            "pipe",
+                            "pipe",
+                            "ignore"
+                        ]
+                    }
+                );
+
+            const chunks = [];
+
+            ffmpeg.stdout.on(
+                "data",
+                chunk => {
+                    chunks.push(chunk);
+                }
+            );
+
+            ffmpeg.on(
+                "error",
+                reject
+            );
+
+            ffmpeg.on(
+                "close",
+                code => {
+
+                    if (code !== 0) {
+
+                        reject(
+                            new Error(
+                                `FFmpeg завершился с кодом ${code}`
+                            )
+                        );
+
+                        return;
+                    }
+
+                    resolve(
+                        Buffer.concat(
+                            chunks
+                        )
+                    );
+                }
+            );
+
+            ffmpeg.stdin.end(
+                pcm24k
+            );
+        }
+    );
+}
+
+// ==============================
+// VOICE AI — GEMINI SPEECH
+// ==============================
+
+async function transcribeVoice(
+    pcmData
+) {
+
+    const wav =
+        createWavBuffer(
+            pcmData,
+            48000,
+            2,
+            16
+        );
+
+    const response =
+        await gemini.models.generateContent({
+
+            model:
+                VOICE_AI_TEXT_MODEL,
+
+            contents: [
+                {
+                    text:
+                        "Распознай речь на аудиозаписи. " +
+                        "Верни только дословный текст речи без пояснений. " +
+                        "Если речи нет или её невозможно разобрать, верни пустую строку."
+                },
+                {
+                    inlineData: {
+                        mimeType:
+                            "audio/wav",
+                        data:
+                            wav.toString(
+                                "base64"
+                            )
+                    }
+                }
+            ]
+        });
+
+    return (
+        response.text ||
+        ""
+    ).trim();
+}
+
+// ==============================
+// VOICE AI — ASK GEMINI
+// ==============================
+
+async function askVoiceAI(
+    text
+) {
+
+    const response =
+        await gemini.models.generateContent({
+
+            model:
+                VOICE_AI_TEXT_MODEL,
+
+            contents:
+                text,
+
+            config: {
+                systemInstruction:
+                    VOICE_AI_SYSTEM
+            }
+        });
+
+    return (
+        response.text ||
+        "Я не смог придумать ответ."
+    ).trim();
+}
+
+// ==============================
+// VOICE AI — TTS
+// ==============================
+
+async function textToSpeech(
+    text
+) {
+
+    const response =
+        await gemini.models.generateContent({
+
+            model:
+                VOICE_AI_TTS_MODEL,
+
+            contents:
+                text,
+
+            config: {
+
+                responseModalities: [
+                    "AUDIO"
+                ],
+
+                speechConfig: {
+
+                    voiceConfig: {
+
+                        prebuiltVoiceConfig: {
+                            voiceName: "Kore"
+                        }
+                    }
+                }
+            }
+        });
+
+    const part =
+        response.candidates?.[0]
+            ?.content
+            ?.parts
+            ?.find(
+                part =>
+                    part.inlineData?.data
+            );
+
+    if (
+        !part?.inlineData?.data
+    ) {
+
+        throw new Error(
+            "Gemini не вернул аудио TTS."
+        );
+    }
+
+    return Buffer.from(
+        part.inlineData.data,
+        "base64"
+    );
+}
+
+// ==============================
+// VOICE AI — PLAY AUDIO
+// ==============================
+
+async function playVoiceAI(
+    session,
+    text
+) {
+
+    const pcm24k =
+        await textToSpeech(
+            text
+        );
+
+    const pcm48k =
+        await convertTtsPcmToDiscord(
+            pcm24k
+        );
+
+    const resource =
+        createAudioResource(
+            pcm48k,
+            {
+                inputType:
+                    StreamType.Raw,
+                inlineVolume:
+                    false
+            }
+        );
+
+    session.player.play(
+        resource
+    );
+
+    return new Promise(
+        resolve => {
+
+            const timeout =
+                setTimeout(
+                    resolve,
+                    30000
+                );
+
+            const listener =
+                state => {
+
+                    if (
+                        state.status ===
+                        AudioPlayerStatus.Idle
+                    ) {
+
+                        clearTimeout(
+                            timeout
+                        );
+
+                        session.player.off(
+                            "stateChange",
+                            listener
+                        );
+
+                        resolve();
+                    }
+                };
+
+            session.player.on(
+                "stateChange",
+                listener
+            );
+        }
+    );
+}
+
+// ==============================
+// VOICE AI — PROCESS SPEECH
+// ==============================
+
+async function processVoiceAudio(
+    session,
+    userId,
+    pcmData
+) {
+
+    if (
+        !session.active
+    ) {
+        return;
+    }
+
+    if (
+        pcmData.length < 48000
+    ) {
+        return;
+    }
+
+    if (
+        session.processingUsers.has(
+            userId
+        )
+    ) {
+        return;
+    }
+
+    session.processingUsers.add(
+        userId
+    );
+
+    try {
+
+        console.log(
+            `🎤 Voice AI: получено аудио от ${userId}`
+        );
+
+        const text =
+            await transcribeVoice(
+                pcmData
+            );
+
+        if (
+            !text
+        ) {
+
+            return;
+        }
+
+        console.log(
+            `📝 Voice AI распознал: ${text}`
+        );
+
+        const answer =
+            await askVoiceAI(
+                text
+            );
+
+        console.log(
+            `🤖 Voice AI ответ: ${answer}`
+        );
+
+        if (
+            session.active
+        ) {
+
+            await playVoiceAI(
+                session,
+                answer
+            );
+        }
+
+    } catch (error) {
+
+        console.error(
+            "❌ Ошибка Voice AI:",
+            error
+        );
+
+    } finally {
+
+        session.processingUsers.delete(
+            userId
+        );
+    }
+}
+
+// ==============================
+// VOICE AI — LISTEN USER
+// ==============================
+
+function listenToUser(
+    session,
+    userId
+) {
+
+    if (
+        !session.active ||
+        session.voiceConnection.state.status !==
+        VoiceConnectionStatus.Ready
+    ) {
+        return;
+    }
+
+    if (
+        session.subscriptions.has(
+            userId
+        )
+    ) {
+        return;
+    }
+
+    const receiver =
+        session.voiceConnection.receiver;
+
+    let audioStream;
+
+    try {
+
+        audioStream =
+            receiver.subscribe(
+                userId,
+                {
+                    end:
+                        {
+                            behavior:
+                                EndBehaviorType.AfterSilence,
+                            duration:
+                                700
+                        }
+                }
+            );
+
+    } catch (error) {
+
+        console.error(
+            "❌ Не удалось подписаться на голос:",
+            error
+        );
+
+        return;
+    }
+
+    session.subscriptions.set(
+        userId,
+        audioStream
+    );
+
+    const decoder =
+        new prism.opus.Decoder({
+            frameSize: 960,
+            channels: 2,
+            rate: 48000
+        });
+
+    const chunks = [];
+
+    audioStream
+        .pipe(decoder)
+        .on(
+            "data",
+            chunk => {
+
+                if (
+                    chunks.length < 5000
+                ) {
+
+                    chunks.push(
+                        chunk
+                    );
+                }
+            }
+        )
+        .on(
+            "end",
+            async () => {
+
+                session.subscriptions.delete(
+                    userId
+                );
+
+                const pcmData =
+                    Buffer.concat(
+                        chunks
+                    );
+
+                await processVoiceAudio(
+                    session,
+                    userId,
+                    pcmData
+                );
+            }
+        )
+        .on(
+            "error",
+            error => {
+
+                session.subscriptions.delete(
+                    userId
+                );
+
+                console.error(
+                    "❌ Ошибка обработки Discord audio:",
+                    error
+                );
+            }
+        );
+}
+
+// ==============================
+// START VOICE AI
+// ==============================
+
+async function startVoiceAI(
+    member
+) {
+
+    const channel =
+        member.voice.channel;
+
+    if (!channel) {
+
+        throw new Error(
+            "Ты должен находиться в голосовом канале."
+        );
+    }
+
+    const oldSession =
+        voiceAISessions.get(
+            member.guild.id
+        );
+
+    if (oldSession) {
+
+        stopVoiceAI(
+            member.guild.id
+        );
+    }
+
+    const connection =
+        joinVoiceChannel({
+
+            channelId:
+                channel.id,
+
+            guildId:
+                member.guild.id,
+
+            adapterCreator:
+                channel.guild.voiceAdapterCreator,
+
+            selfDeaf:
+                false,
+
+            selfMute:
+                false
+        });
+
+    const player =
+        createAudioPlayer();
+
+    connection.subscribe(
+        player
+    );
+
+    const session = {
+
+        active: true,
+
+        guildId:
+            member.guild.id,
+
+        channelId:
+            channel.id,
+
+        voiceConnection:
+            connection,
+
+        player,
+
+        subscriptions:
+            new Map(),
+
+        processingUsers:
+            new Set()
+    };
+
+    voiceAISessions.set(
+        member.guild.id,
+        session
+    );
+
+    connection.on(
+        VoiceConnectionStatus.Ready,
+        () => {
+
+            console.log(
+                `✓ Voice AI подключён к ${channel.name}`
+            );
+        }
+    );
+
+    connection.on(
+        VoiceConnectionStatus.Disconnected,
+        () => {
+
+            if (
+                session.active
+            ) {
+
+                console.log(
+                    "⚠️ Voice AI отключён от Discord Voice."
+                );
+            }
+        }
+    );
+
+    const receiver =
+        connection.receiver;
+
+    receiver.speaking.on(
+        "start",
+        userId => {
+
+            if (
+                !session.active
+            ) {
+                return;
+            }
+
+            if (
+                userId === client.user.id
+            ) {
+                return;
+            }
+
+            const voiceMember =
+                channel.members.get(
+                    userId
+                );
+
+            if (
+                !voiceMember ||
+                voiceMember.user.bot
+            ) {
+                return;
+            }
+
+            listenToUser(
+                session,
+                userId
+            );
+        }
+    );
+
+    return session;
+}
+
+// ==============================
+// STOP VOICE AI
+// ==============================
+
+function stopVoiceAI(
+    guildId
+) {
+
+    const session =
+        voiceAISessions.get(
+            guildId
+        );
+
+    if (!session) {
+        return false;
+    }
+
+    session.active = false;
+
+    for (
+        const stream of
+        session.subscriptions.values()
+    ) {
+
+        try {
+            stream.destroy();
+        } catch {}
+    }
+
+    session.subscriptions.clear();
+
+    try {
+        session.player.stop();
+    } catch {}
+
+    try {
+        session.voiceConnection.destroy();
+    } catch {}
+
+    voiceAISessions.delete(
+        guildId
+    );
+
+    console.log(
+        "✓ Voice AI остановлен."
+    );
+
+    return true;
 }
 
 // ==============================
@@ -997,6 +1801,30 @@ const commands = [
                     )
 
                     .setRequired(true)
+        ),
+
+    // ==========================
+    // /VOICEAI
+    // ==========================
+
+    new SlashCommandBuilder()
+
+        .setName("voiceai")
+
+        .setDescription(
+            "Включить голосовую нейросеть"
+        ),
+
+    // ==========================
+    // /VOICEAI-STOP
+    // ==========================
+
+    new SlashCommandBuilder()
+
+        .setName("voiceai-stop")
+
+        .setDescription(
+            "Выключить голосовую нейросеть"
         )
 
 ].map(
@@ -1030,7 +1858,7 @@ async function registerCommands() {
     );
 
     console.log(
-        "✓ /stats и /ai зарегистрированы"
+        "✓ /stats, /ai, /voiceai и /voiceai-stop зарегистрированы"
     );
 }
 
@@ -1146,10 +1974,6 @@ client.on(
                         prompt
                     );
 
-                // ==========================
-                // DISCORD MAX 2000 SYMBOLS
-                // ==========================
-
                 if (
                     answer.length <= 2000
                 ) {
@@ -1204,6 +2028,90 @@ client.on(
 
             return;
         }
+
+        // ==========================
+        // /VOICEAI
+        // ==========================
+
+        if (
+            interaction.commandName ===
+            "voiceai"
+        ) {
+
+            await interaction.deferReply();
+
+            try {
+
+                const member =
+                    await interaction.guild.members.fetch(
+                        interaction.user.id
+                    );
+
+                if (
+                    !member.voice.channel
+                ) {
+
+                    await interaction.editReply(
+                        "❌ Сначала зайди в голосовой канал."
+                    );
+
+                    return;
+                }
+
+                await startVoiceAI(
+                    member
+                );
+
+                await interaction.editReply(
+                    `🎙️ Голосовая нейронка включена в **${member.voice.channel.name}**.\n\nГовори — я буду слушать и отвечать голосом.`
+                );
+
+            } catch (error) {
+
+                console.error(
+                    "❌ Ошибка запуска Voice AI:",
+                    error
+                );
+
+                await interaction.editReply(
+                    "❌ Не удалось запустить голосовую нейронку. Проверь логи Railway."
+                );
+            }
+
+            return;
+        }
+
+        // ==========================
+        // /VOICEAI-STOP
+        // ==========================
+
+        if (
+            interaction.commandName ===
+            "voiceai-stop"
+        ) {
+
+            const stopped =
+                stopVoiceAI(
+                    interaction.guild.id
+                );
+
+            if (
+                stopped
+            ) {
+
+                await interaction.reply(
+                    "🔇 Голосовая нейронка выключена."
+                );
+
+            } else {
+
+                await interaction.reply(
+                    "ℹ️ Голосовая нейронка сейчас не запущена."
+                );
+            }
+
+            return;
+        }
     }
 );
 
@@ -1219,10 +2127,6 @@ client.once(
             `✓ Бот запущен: ${client.user.tag}`
         );
 
-        // ==========================
-        // CHECK GEMINI KEY
-        // ==========================
-
         if (
             process.env.GEMINI_API_KEY
         ) {
@@ -1234,13 +2138,9 @@ client.once(
         } else {
 
             console.warn(
-                "⚠️ GEMINI_API_KEY не найдена! /ai работать не будет."
+                "⚠️ GEMINI_API_KEY не найдена! /ai и Voice AI работать не будут."
             );
         }
-
-        // ==========================
-        // PRELOAD TEMPLATE
-        // ==========================
 
         await getTemplateImage();
 
