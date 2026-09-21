@@ -8,8 +8,8 @@ const {
     ActivityType
 } = require("discord.js");
 
-// Добавлен GlobalFonts для загрузки кастомного шрифта!
 const { createCanvas, loadImage, GlobalFonts } = require("@napi-rs/canvas");
+const { GoogleGenAI } = require("@google/genai");
 const fs = require("fs");
 const path = require("path");
 
@@ -20,6 +20,15 @@ const path = require("path");
 const TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+
+let aiClient = null;
+if (GEMINI_API_KEY) {
+    aiClient = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+    console.log("✓ Нейросеть Gemini успешно подключена!");
+} else {
+    console.warn("⚠️ GEMINI_API_KEY не найден! Команда /troll будет отвечать заглушкой.");
+}
 
 const TEMPLATE = path.join(__dirname, "template.png");
 const STORAGE = path.join(__dirname, "stats.json");
@@ -63,7 +72,7 @@ const client = new Client({
 });
 
 // ==============================
-// КЭШИРОВАНИЕ ФОНА (ОПТИМИЗАЦИЯ СКОРОСТИ)
+// КЭШИРОВАНИЕ ФОНА
 // ==============================
 let cachedTemplate = null;
 async function getTemplateImage() {
@@ -136,7 +145,7 @@ function getUser(id) {
 }
 
 // ==============================
-// HELPERS (С БЕЗОПАСНЫМИ ПРОВЕРКАМИ)
+// HELPERS
 // ==============================
 
 function formatTime(seconds) {
@@ -381,42 +390,34 @@ client.on("interactionCreate", async interaction => {
         return;
     }
 
-    // Обработка команды /troll (реалистичные дерзкие ответы)
+    // Обработка команды /troll (уникальные живые ответы без повторов)
     if (interaction.commandName === "troll") {
         const userText = interaction.options.getString("text");
+        await interaction.deferReply();
 
-        const starts = [
-            "Чел, ты реально",
-            "Слышь, сиди тихо,",
-            "Завали ебало,",
-            "Ты когда писал",
-            "Меньше пизди,",
-            "Иди нахуй,",
-            "Хули ты высрал"
-        ];
-        
-        const middles = [
-            `вот это дерьмо про "${userText}"`,
-            `со своим текстом "${userText}"`,
-            `когда базаришь про "${userText}"`,
-            `с такой хуйнёй в голове`,
-            `и не позорься тут`
-        ];
+        try {
+            if (aiClient) {
+                // Системный промпт с высокой вариативностью, чтобы бот каждый раз придумывал новое
+                const prompt = `Ты — токсичный и дерзкий чел в дискорде, который общается на сленге, без душноты и без цензуры. Тебе написали: "${userText}". Отвечай КАЖДЫЙ РАЗ абсолютно по-разному, не повторяйся, выдумывай новые оскорбления, контексты и доебы. Длина ответа — одно емкое предложение.`;
 
-        const ends = [
-            "и иди уроки учи.",
-            "клоун комнатный.",
-            "моник протри от слюней.",
-            "мамке своей пожалуйся.",
-            "удаляй дискорд и спать.",
-            "сын помойки."
-        ];
+                const response = await aiClient.models.generateContent({
+                    model: 'gemini-2.5-flash',
+                    contents: prompt,
+                    config: {
+                        temperature: 1.2, // Максимальная креативность и рандом, чтобы не повторялся
+                        maxOutputTokens: 60,
+                    }
+                });
 
-        const r1 = starts[Math.floor(Math.random() * starts.length)];
-        const r2 = middles[Math.floor(Math.random() * middles.length)];
-        const r3 = ends[Math.floor(Math.random() * ends.length)];
-
-        await interaction.reply({ content: `${r1} ${r2}, ${r3}` });
+                const aiReply = response.text ? response.text.trim() : "Чел, твой текст — полный рандом, иди поспи.";
+                await interaction.editReply({ content: aiReply });
+            } else {
+                await interaction.editReply({ content: `Слышь, "${userText}" — это бред сумасшедшего.` });
+            }
+        } catch (error) {
+            console.error("Ошибка генерации через Gemini:", error);
+            await interaction.editReply({ content: `Чел, твой высер "${userText}" сломал мне мозг.` });
+        }
     }
 });
 
