@@ -27,13 +27,14 @@ const {
 const prism = require("prism-media");
 const { spawn } = require("child_process");
 const ffmpegPath = require("ffmpeg-static");
+const { Readable } = require("stream");
 
 const fs = require("fs");
 const path = require("path");
 
-// =========================
+// ============================================================
 // ENV
-// =========================
+// ============================================================
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const CLIENT_ID = process.env.CLIENT_ID;
@@ -62,9 +63,9 @@ if (!GEMINI_API_KEY) {
 
 console.log("✓ GEMINI_API_KEY найдена");
 
-// =========================
+// ============================================================
 // CLIENT
-// =========================
+// ============================================================
 
 const client = new Client({
   intents: [
@@ -77,32 +78,40 @@ const client = new Client({
   ],
 });
 
-// =========================
+// ============================================================
 // GEMINI
-// =========================
+// ============================================================
 
 const gemini = new GoogleGenAI({
   apiKey: GEMINI_API_KEY,
 });
 
-// Обычный /ai НЕ МЕНЯЕМ
+// Обычный /ai — НЕ МЕНЯЕМ
 const AI_MODEL = "gemini-3.5-flash-lite";
 
 // Voice AI
+// Распознавание речи:
+const VOICE_AI_TRANSCRIBE_MODEL = "gemini-3.5-transcribe";
+
+// Генерация ответа:
 const VOICE_AI_TEXT_MODEL = "gemini-3.5-flash-lite";
+
+// Озвучка:
 const VOICE_AI_TTS_MODEL = "gemini-2.5-flash-preview-tts";
 
 const VOICE_AI_SYSTEM = `
 Ты голосовой ассистент в Discord.
-Отвечай по-русски, коротко и естественно.
+
+Отвечай по-русски.
+Отвечай коротко и естественно.
 Не используй Markdown.
 Не пиши длинные ответы.
-Если пользователь задал простой вопрос — ответь кратко.
+Если вопрос простой — ответь кратко.
 `;
 
-// =========================
+// ============================================================
 // STATS
-// =========================
+// ============================================================
 
 const statsPath = path.join(__dirname, "stats.json");
 const templatePath = path.join(__dirname, "template.png");
@@ -115,27 +124,28 @@ let stats = {
 function loadStats() {
   try {
     if (!fs.existsSync(statsPath)) {
-      fs.writeFileSync(
-        statsPath,
-        JSON.stringify(stats, null, 2),
-        "utf8"
-      );
+      stats = { users: {} };
+      saveStats();
       return;
     }
 
-    const data = JSON.parse(
-      fs.readFileSync(statsPath, "utf8")
-    );
+    const raw = fs.readFileSync(statsPath, "utf8");
 
-    if (data && typeof data === "object") {
-      stats = data;
+    if (!raw.trim()) {
+      stats = { users: {} };
+      return;
     }
 
-    if (!stats.users) {
+    stats = JSON.parse(raw);
+
+    if (!stats.users || typeof stats.users !== "object") {
       stats.users = {};
     }
+
+    console.log("✓ Статистика загружена!");
   } catch (error) {
     console.error("❌ Ошибка загрузки stats.json:", error);
+    stats = { users: {} };
   }
 }
 
@@ -153,37 +163,38 @@ function saveStats() {
 
 loadStats();
 
-// =========================
+// ============================================================
 // TEMPLATE / FONT
-// =========================
+// ============================================================
 
 let templateImage = null;
 
 if (fs.existsSync(fontPath)) {
   try {
     GlobalFonts.registerFromPath(fontPath, "CustomFont");
-    console.log("✓ Кастомный шрифт успешно загружен!");
+    console.log("✓ Шрифт зарегистрирован!");
   } catch (error) {
-    console.error("❌ Ошибка загрузки шрифта:", error);
+    console.error("❌ Ошибка регистрации шрифта:", error);
   }
 }
 
 async function loadTemplate() {
   try {
-    if (fs.existsSync(templatePath)) {
-      templateImage = await loadImage(templatePath);
-      console.log("✓ Шаблон закэширован!");
-    } else {
-      console.log("⚠️ template.png не найден");
+    if (!fs.existsSync(templatePath)) {
+      console.log("⚠️ template.png не найден.");
+      return;
     }
+
+    templateImage = await loadImage(templatePath);
+    console.log("✓ Шаблон закэширован!");
   } catch (error) {
-    console.error("❌ Ошибка загрузки template.png:", error);
+    console.error("❌ Ошибка загрузки шаблона:", error);
   }
 }
 
-// =========================
+// ============================================================
 // USER STATS HELPERS
-// =========================
+// ============================================================
 
 function getUserStats(userId) {
   if (!stats.users[userId]) {
@@ -192,7 +203,7 @@ function getUserStats(userId) {
       voiceSeconds: 0,
       discordSeconds: 0,
       gamingSeconds: 0,
-      gamingGame: null,
+      gamingGame: "",
 
       messageActiveSince: null,
       voiceActiveSince: null,
@@ -201,217 +212,348 @@ function getUserStats(userId) {
     };
   }
 
-  return stats.users[userId];
+  const user = stats.users[userId];
+
+  if (typeof user.messages !== "number") {
+    user.messages = 0;
+  }
+
+  if (typeof user.voiceSeconds !== "number") {
+    user.voiceSeconds = 0;
+  }
+
+  if (typeof user.discordSeconds !== "number") {
+    user.discordSeconds = 0;
+  }
+
+  if (typeof user.gamingSeconds !== "number") {
+    user.gamingSeconds = 0;
+  }
+
+  if (typeof user.gamingGame !== "string") {
+    user.gamingGame = "";
+  }
+
+  if (!("messageActiveSince" in user)) {
+    user.messageActiveSince = null;
+  }
+
+  if (!("voiceActiveSince" in user)) {
+    user.voiceActiveSince = null;
+  }
+
+  if (!("discordActiveSince" in user)) {
+    user.discordActiveSince = null;
+  }
+
+  if (!("gamingActiveSince" in user)) {
+    user.gamingActiveSince = null;
+  }
+
+  return user;
 }
+
+// ============================================================
+// ACTIVE TIME
+// ============================================================
 
 function updateActiveTime(userId) {
-  const userStats = getUserStats(userId);
+  const user = getUserStats(userId);
   const now = Date.now();
 
-  if (userStats.voiceActiveSince) {
-    userStats.voiceSeconds += Math.max(
-      0,
-      Math.floor((now - userStats.voiceActiveSince) / 1000)
-    );
-
-    userStats.voiceActiveSince = now;
+  if (user.messageActiveSince) {
+    user.messages += 0;
   }
 
-  if (userStats.discordActiveSince) {
-    userStats.discordSeconds += Math.max(
+  if (user.voiceActiveSince) {
+    user.voiceSeconds += Math.max(
       0,
-      Math.floor((now - userStats.discordActiveSince) / 1000)
+      Math.floor((now - user.voiceActiveSince) / 1000)
     );
 
-    userStats.discordActiveSince = now;
+    user.voiceActiveSince = now;
   }
 
-  if (userStats.gamingActiveSince) {
-    userStats.gamingSeconds += Math.max(
+  if (user.discordActiveSince) {
+    user.discordSeconds += Math.max(
       0,
-      Math.floor((now - userStats.gamingActiveSince) / 1000)
+      Math.floor((now - user.discordActiveSince) / 1000)
     );
 
-    userStats.gamingActiveSince = now;
+    user.discordActiveSince = now;
+  }
+
+  if (user.gamingActiveSince) {
+    user.gamingSeconds += Math.max(
+      0,
+      Math.floor((now - user.gamingActiveSince) / 1000)
+    );
+
+    user.gamingActiveSince = now;
   }
 }
 
-// =========================
+// ============================================================
 // DAILY RESET
-// =========================
+// ============================================================
 
 let lastResetDate = new Date().toDateString();
 
 function checkDailyReset() {
-  const today = new Date().toDateString();
+  const currentDate = new Date().toDateString();
 
-  if (today === lastResetDate) {
+  if (currentDate === lastResetDate) {
     return;
   }
 
-  console.log("🔄 Новый день — сбрасываю статистику");
+  console.log("🔄 Новый день — сбрасываю дневную статистику.");
 
   for (const userId of Object.keys(stats.users)) {
-    const userStats = stats.users[userId];
+    const user = getUserStats(userId);
 
     updateActiveTime(userId);
 
-    userStats.messages = 0;
-    userStats.voiceSeconds = 0;
-    userStats.discordSeconds = 0;
-    userStats.gamingSeconds = 0;
-    userStats.gamingGame = null;
+    user.messages = 0;
+    user.voiceSeconds = 0;
+    user.discordSeconds = 0;
+    user.gamingSeconds = 0;
+    user.gamingGame = "";
 
+    // Сохраняем активные сессии,
+    // чтобы время после сброса продолжало считаться.
     const now = Date.now();
 
-    if (userStats.messageActiveSince) {
-      userStats.messageActiveSince = now;
+    if (user.messageActiveSince) {
+      user.messageActiveSince = now;
     }
 
-    if (userStats.voiceActiveSince) {
-      userStats.voiceActiveSince = now;
+    if (user.voiceActiveSince) {
+      user.voiceActiveSince = now;
     }
 
-    if (userStats.discordActiveSince) {
-      userStats.discordActiveSince = now;
+    if (user.discordActiveSince) {
+      user.discordActiveSince = now;
     }
 
-    if (userStats.gamingActiveSince) {
-      userStats.gamingActiveSince = now;
+    if (user.gamingActiveSince) {
+      user.gamingActiveSince = now;
     }
   }
 
-  lastResetDate = today;
+  lastResetDate = currentDate;
   saveStats();
 }
 
-// =========================
+// ============================================================
 // MESSAGE TRACKING
-// =========================
+// ============================================================
 
 client.on("messageCreate", (message) => {
-  if (!message.guild) return;
-  if (message.author.bot) return;
+  try {
+    if (!message.guild) return;
+    if (message.author.bot) return;
 
-  checkDailyReset();
+    checkDailyReset();
 
-  const userStats = getUserStats(message.author.id);
+    const user = getUserStats(message.author.id);
 
-  updateActiveTime(message.author.id);
+    user.messages += 1;
 
-  userStats.messages++;
+    if (!user.messageActiveSince) {
+      user.messageActiveSince = Date.now();
+    }
 
-  if (!userStats.messageActiveSince) {
-    userStats.messageActiveSince = Date.now();
+    saveStats();
+  } catch (error) {
+    console.error("❌ Ошибка message tracking:", error);
   }
-
-  saveStats();
 });
 
-// =========================
+// ============================================================
 // VOICE TRACKING
-// =========================
+// ============================================================
 
 client.on("voiceStateUpdate", (oldState, newState) => {
-  checkDailyReset();
+  try {
+    if (!newState.member) return;
 
-  const userId = newState.id;
+    const userId = newState.member.id;
 
-  if (client.user && userId === client.user.id) {
-    return;
-  }
+    if (newState.member.user?.bot) {
+      return;
+    }
 
-  const userStats = getUserStats(userId);
-  const now = Date.now();
+    checkDailyReset();
 
-  // Вошёл в голосовой канал
-  if (!oldState.channelId && newState.channelId) {
-    userStats.voiceActiveSince = now;
-  }
+    const user = getUserStats(userId);
 
-  // Вышел из голосового канала
-  if (oldState.channelId && !newState.channelId) {
-    updateActiveTime(userId);
-    userStats.voiceActiveSince = null;
+    // Подключился к голосовому
+    if (!oldState.channelId && newState.channelId) {
+      if (!user.voiceActiveSince) {
+        user.voiceActiveSince = Date.now();
+      }
+    }
+
+    // Отключился
+    if (oldState.channelId && !newState.channelId) {
+      if (user.voiceActiveSince) {
+        user.voiceSeconds += Math.max(
+          0,
+          Math.floor(
+            (Date.now() - user.voiceActiveSince) / 1000
+          )
+        );
+
+        user.voiceActiveSince = null;
+      }
+    }
+
+    // Discord activity
+    if (newState.channelId) {
+      if (!user.discordActiveSince) {
+        user.discordActiveSince = Date.now();
+      }
+    } else {
+      if (user.discordActiveSince) {
+        user.discordSeconds += Math.max(
+          0,
+          Math.floor(
+            (Date.now() - user.discordActiveSince) / 1000
+          )
+        );
+
+        user.discordActiveSince = null;
+      }
+    }
+
+    saveStats();
+  } catch (error) {
+    console.error("❌ Ошибка voice tracking:", error);
   }
 });
 
-// =========================
+// ============================================================
 // PRESENCE / GAMING
-// =========================
+// ============================================================
 
 client.on("presenceUpdate", (oldPresence, newPresence) => {
-  checkDailyReset();
+  try {
+    if (!newPresence?.userId) return;
 
-  if (!newPresence || !newPresence.userId) {
-    return;
-  }
+    const userId = newPresence.userId;
 
-  const userId = newPresence.userId;
+    const member = newPresence.member;
 
-  if (client.user && userId === client.user.id) {
-    return;
-  }
-
-  const userStats = getUserStats(userId);
-
-  const isOnline =
-    newPresence.status === "online" ||
-    newPresence.status === "idle" ||
-    newPresence.status === "dnd";
-
-  const playingActivity = newPresence.activities?.find(
-    (activity) => activity.type === ActivityType.Playing
-  );
-
-  const now = Date.now();
-
-  if (isOnline) {
-    if (!userStats.discordActiveSince) {
-      userStats.discordActiveSince = now;
-    }
-  } else {
-    if (userStats.discordActiveSince) {
-      updateActiveTime(userId);
-      userStats.discordActiveSince = null;
-    }
-  }
-
-  if (playingActivity) {
-    if (!userStats.gamingActiveSince) {
-      userStats.gamingActiveSince = now;
+    if (member?.user?.bot) {
+      return;
     }
 
-    userStats.gamingGame =
-      playingActivity.name || playingActivity.details || "Игра";
-  } else {
-    if (userStats.gamingActiveSince) {
-      updateActiveTime(userId);
-      userStats.gamingActiveSince = null;
-      userStats.gamingGame = null;
-    }
-  }
+    checkDailyReset();
 
-  saveStats();
+    const user = getUserStats(userId);
+
+    const activities = newPresence.activities || [];
+
+    const game = activities.find(
+      (activity) =>
+        activity.type === ActivityType.Playing
+    );
+
+    if (game) {
+      if (!user.gamingActiveSince) {
+        user.gamingActiveSince = Date.now();
+      }
+
+      user.gamingGame =
+        game.name ||
+        game.details ||
+        "Игра";
+    } else {
+      if (user.gamingActiveSince) {
+        user.gamingSeconds += Math.max(
+          0,
+          Math.floor(
+            (Date.now() - user.gamingActiveSince) / 1000
+          )
+        );
+
+        user.gamingActiveSince = null;
+      }
+
+      user.gamingGame = "";
+    }
+
+    // Discord online/idle/dnd
+    if (
+      newPresence.status === "online" ||
+      newPresence.status === "idle" ||
+      newPresence.status === "dnd"
+    ) {
+      if (!user.discordActiveSince) {
+        user.discordActiveSince = Date.now();
+      }
+    } else {
+      if (user.discordActiveSince) {
+        user.discordSeconds += Math.max(
+          0,
+          Math.floor(
+            (Date.now() - user.discordActiveSince) / 1000
+          )
+        );
+
+        user.discordActiveSince = null;
+      }
+    }
+
+    saveStats();
+  } catch (error) {
+    console.error("❌ Ошибка presence tracking:", error);
+  }
 });
 
-// =========================
+// ============================================================
 // AUTOSAVE
-// =========================
+// ============================================================
 
 setInterval(() => {
-  checkDailyReset();
+  try {
+    checkDailyReset();
 
-  for (const userId of Object.keys(stats.users)) {
-    updateActiveTime(userId);
+    for (const userId of Object.keys(stats.users)) {
+      updateActiveTime(userId);
+    }
+
+    saveStats();
+  } catch (error) {
+    console.error("❌ Ошибка autosave:", error);
   }
-
-  saveStats();
 }, 30000);
 
-// =========================
+// ============================================================
 // STATS IMAGE
-// =========================
+// ============================================================
+
+function formatTime(seconds) {
+  seconds = Math.max(0, Math.floor(seconds));
+
+  const days = Math.floor(seconds / 86400);
+  seconds %= 86400;
+
+  const hours = Math.floor(seconds / 3600);
+  seconds %= 3600;
+
+  const minutes = Math.floor(seconds / 60);
+
+  if (days > 0) {
+    return `${days}д ${hours}ч`;
+  }
+
+  if (hours > 0) {
+    return `${hours}ч ${minutes}м`;
+  }
+
+  return `${minutes}м`;
+}
 
 async function createStatsImage(user) {
   const width = 1536;
@@ -420,8 +562,15 @@ async function createStatsImage(user) {
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
 
+  // Фон
   if (templateImage) {
-    ctx.drawImage(templateImage, 0, 0, width, height);
+    ctx.drawImage(
+      templateImage,
+      0,
+      0,
+      width,
+      height
+    );
   } else {
     ctx.fillStyle = "#111111";
     ctx.fillRect(0, 0, width, height);
@@ -431,25 +580,36 @@ async function createStatsImage(user) {
 
   updateActiveTime(user.id);
 
-  const avatarURL = user.displayAvatarURL({
-    extension: "png",
-    size: 512,
-  });
+  // ==========================================================
+  // AVATAR
+  // ==========================================================
 
   try {
+    const avatarURL = user.displayAvatarURL({
+      extension: "png",
+      size: 512,
+    });
+
     const avatar = await loadImage(avatarURL);
 
     ctx.save();
 
     ctx.beginPath();
-    ctx.arc(768, 240, 150, 0, Math.PI * 2);
+    ctx.arc(
+      768,
+      270,
+      150,
+      0,
+      Math.PI * 2
+    );
+
     ctx.closePath();
     ctx.clip();
 
     ctx.drawImage(
       avatar,
       618,
-      90,
+      120,
       300,
       300
     );
@@ -459,151 +619,222 @@ async function createStatsImage(user) {
     console.error("❌ Ошибка загрузки аватара:", error);
   }
 
-  ctx.font = "bold 58px CustomFont";
+  // ==========================================================
+  // USERNAME
+  // ==========================================================
+
   ctx.textAlign = "center";
+
+  ctx.font = "bold 64px CustomFont, Arial";
   ctx.fillStyle = "#ffffff";
 
   ctx.fillText(
     user.username,
     768,
-    460
+    500
   );
 
-  const cards = [
-    {
-      title: "VOICE",
-      value: formatTime(userStats.voiceSeconds),
-      color: "#ff4b4b",
-    },
-    {
-      title: "MESSAGE",
-      value: String(userStats.messages),
-      color: "#55a8ff",
-    },
-    {
-      title: "DISCORD",
-      value: formatTime(userStats.discordSeconds),
-      color: "#c080ff",
-    },
-    {
-      title: "GAMING",
-      value: formatTime(userStats.gamingSeconds),
-      color: "#43ff91",
-    },
-    {
-      title: "MUSIC",
-      value: "SOON",
-      color: "#ffd84a",
-    },
-  ];
+  // ==========================================================
+  // CARD HELPER
+  // ==========================================================
 
-  const cardWidth = 420;
-  const cardHeight = 220;
+  function drawCard(
+    x,
+    y,
+    w,
+    h,
+    title,
+    value,
+    color
+  ) {
+    ctx.save();
 
-  const positions = [
-    [78, 560],
-    [558, 560],
-    [1038, 560],
-    [318, 830],
-    [798, 830],
-  ];
+    ctx.fillStyle = "rgba(20, 20, 25, 0.88)";
 
-  cards.forEach((card, index) => {
-    const [x, y] = positions[index];
-
-    ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
     ctx.beginPath();
-    ctx.roundRect(
+
+    const radius = 35;
+
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + w - radius, y);
+
+    ctx.quadraticCurveTo(
+      x + w,
+      y,
+      x + w,
+      y + radius
+    );
+
+    ctx.lineTo(x + w, y + h - radius);
+
+    ctx.quadraticCurveTo(
+      x + w,
+      y + h,
+      x + w - radius,
+      y + h
+    );
+
+    ctx.lineTo(x + radius, y + h);
+
+    ctx.quadraticCurveTo(
+      x,
+      y + h,
+      x,
+      y + h - radius
+    );
+
+    ctx.lineTo(x, y + radius);
+
+    ctx.quadraticCurveTo(
       x,
       y,
-      cardWidth,
-      cardHeight,
-      35
+      x + radius,
+      y
     );
+
+    ctx.closePath();
     ctx.fill();
 
-    ctx.strokeStyle = card.color;
-    ctx.lineWidth = 5;
+    ctx.fillStyle = color;
 
-    ctx.beginPath();
-    ctx.roundRect(
+    ctx.fillRect(
       x,
       y,
-      cardWidth,
-      cardHeight,
-      35
-    );
-    ctx.stroke();
-
-    ctx.textAlign = "center";
-
-    ctx.font = "bold 32px CustomFont";
-    ctx.fillStyle = card.color;
-
-    ctx.fillText(
-      card.title,
-      x + cardWidth / 2,
-      y + 65
+      10,
+      h
     );
 
-    ctx.font = "bold 50px CustomFont";
+    ctx.textAlign = "left";
+
+    ctx.font = "bold 32px CustomFont, Arial";
     ctx.fillStyle = "#ffffff";
 
     ctx.fillText(
-      card.value,
-      x + cardWidth / 2,
-      y + 140
+      title,
+      x + 45,
+      y + 65
     );
-  });
+
+    ctx.font = "bold 52px CustomFont, Arial";
+    ctx.fillStyle = color;
+
+    ctx.fillText(
+      value,
+      x + 45,
+      y + 130
+    );
+
+    ctx.restore();
+  }
+
+  // ==========================================================
+  // CARDS
+  // ==========================================================
+
+  drawCard(
+    160,
+    620,
+    560,
+    190,
+    "VOICE",
+    formatTime(userStats.voiceSeconds),
+    "#ff4b4b"
+  );
+
+  drawCard(
+    816,
+    620,
+    560,
+    190,
+    "MESSAGE",
+    String(userStats.messages),
+    "#55a8ff"
+  );
+
+  drawCard(
+    160,
+    850,
+    560,
+    190,
+    "DISCORD",
+    formatTime(userStats.discordSeconds),
+    "#c080ff"
+  );
+
+  drawCard(
+    816,
+    850,
+    560,
+    190,
+    "GAMING",
+    formatTime(userStats.gamingSeconds),
+    "#43ff91"
+  );
+
+  // MUSIC
+  drawCard(
+    160,
+    1080,
+    560,
+    190,
+    "MUSIC",
+    "SOON",
+    "#ffd84a"
+  );
+
+  // Game name
+  if (userStats.gamingGame) {
+    ctx.textAlign = "center";
+
+    ctx.font = "28px CustomFont, Arial";
+    ctx.fillStyle = "#ffffff";
+
+    ctx.fillText(
+      userStats.gamingGame,
+      1096,
+      1195
+    );
+  }
 
   return canvas.toBuffer("image/png");
 }
 
-function formatTime(seconds) {
-  seconds = Math.max(0, Math.floor(seconds));
-
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor(
-    (seconds % 3600) / 60
-  );
-  const secs = seconds % 60;
-
-  if (hours > 0) {
-    return `${hours}ч ${minutes}м`;
-  }
-
-  if (minutes > 0) {
-    return `${minutes}м ${secs}с`;
-  }
-
-  return `${secs}с`;
-}
-
-// =========================
+// ============================================================
 // NORMAL AI
-// =========================
+// ============================================================
 
 async function askAI(prompt) {
-  const response = await gemini.models.generateContent({
-    model: AI_MODEL,
-    contents: prompt,
-    config: {
-      systemInstruction: `
+  const response =
+    await gemini.models.generateContent({
+      model: AI_MODEL,
+      contents: prompt,
+      config: {
+        systemInstruction: `
 Ты обычный AI-ассистент Discord-бота.
 Отвечай на русском языке.
 Будь полезным и понятным.
 `,
-    },
-  });
+      },
+    });
 
-  return response.text || "Не удалось получить ответ.";
+  return (
+    response.text ||
+    "Не удалось получить ответ."
+  );
 }
 
-// =========================
+// ============================================================
 // VOICE AI
-// =========================
+// ============================================================
 
 let voiceAISession = null;
+
+// Защита от нескольких одновременных запросов
+let voiceAIProcessing = false;
+
+// ============================================================
+// WAV
+// ============================================================
 
 function createWavBuffer(pcmBuffer) {
   const sampleRate = 48000;
@@ -613,163 +844,280 @@ function createWavBuffer(pcmBuffer) {
   const byteRate =
     sampleRate *
     channels *
-    (bitsPerSample / 8);
+    bitsPerSample /
+    8;
 
   const blockAlign =
     channels *
-    (bitsPerSample / 8);
+    bitsPerSample /
+    8;
 
-  const wavHeader = Buffer.alloc(44);
+  const dataSize = pcmBuffer.length;
 
-  wavHeader.write("RIFF", 0);
-  wavHeader.writeUInt32LE(
-    36 + pcmBuffer.length,
-    4
+  const buffer = Buffer.alloc(
+    44 + dataSize
   );
 
-  wavHeader.write("WAVE", 8);
-  wavHeader.write("fmt ", 12);
+  buffer.write("RIFF", 0);
+  buffer.writeUInt32LE(
+    36 + dataSize,
+    4
+  );
+  buffer.write("WAVE", 8);
 
-  wavHeader.writeUInt32LE(16, 16);
-  wavHeader.writeUInt16LE(1, 20);
-  wavHeader.writeUInt16LE(channels, 22);
-  wavHeader.writeUInt32LE(sampleRate, 24);
-  wavHeader.writeUInt32LE(byteRate, 28);
-  wavHeader.writeUInt16LE(blockAlign, 32);
-  wavHeader.writeUInt16LE(bitsPerSample, 34);
+  buffer.write("fmt ", 12);
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(
+    channels,
+    22
+  );
+  buffer.writeUInt32LE(
+    sampleRate,
+    24
+  );
+  buffer.writeUInt32LE(
+    byteRate,
+    28
+  );
+  buffer.writeUInt16LE(
+    blockAlign,
+    32
+  );
+  buffer.writeUInt16LE(
+    bitsPerSample,
+    34
+  );
 
-  wavHeader.write("data", 36);
-  wavHeader.writeUInt32LE(
-    pcmBuffer.length,
+  buffer.write("data", 36);
+  buffer.writeUInt32LE(
+    dataSize,
     40
   );
 
-  return Buffer.concat([
-    wavHeader,
-    pcmBuffer,
-  ]);
+  pcmBuffer.copy(
+    buffer,
+    44
+  );
+
+  return buffer;
 }
 
-function convertTtsPcmToDiscord(pcmBuffer) {
-  return new Promise((resolve, reject) => {
-    if (!ffmpegPath) {
-      return reject(
-        new Error("ffmpeg-static не найден")
+// ============================================================
+// TTS PCM CONVERSION
+// ============================================================
+
+function convertTtsPcmToDiscord(
+  pcmBuffer
+) {
+  return new Promise(
+    (resolve, reject) => {
+      const ffmpeg = spawn(
+        ffmpegPath,
+        [
+          "-f",
+          "s16le",
+
+          "-ar",
+          "24000",
+
+          "-ac",
+          "1",
+
+          "-i",
+          "pipe:0",
+
+          "-f",
+          "s16le",
+
+          "-ar",
+          "48000",
+
+          "-ac",
+          "2",
+
+          "pipe:1",
+        ]
+      );
+
+      const chunks = [];
+
+      ffmpeg.stdout.on(
+        "data",
+        (chunk) => {
+          chunks.push(chunk);
+        }
+      );
+
+      ffmpeg.stderr.on(
+        "data",
+        () => {}
+      );
+
+      ffmpeg.on(
+        "error",
+        reject
+      );
+
+      ffmpeg.on(
+        "close",
+        (code) => {
+          if (code !== 0) {
+            return reject(
+              new Error(
+                `FFmpeg завершился с кодом ${code}`
+              )
+            );
+          }
+
+          resolve(
+            Buffer.concat(chunks)
+          );
+        }
+      );
+
+      ffmpeg.stdin.write(
+        pcmBuffer
+      );
+
+      ffmpeg.stdin.end();
+    }
+  );
+}
+
+// ============================================================
+// TRANSCRIBE VOICE
+// ============================================================
+
+async function transcribeVoice(
+  pcmData
+) {
+  try {
+    const wavBuffer =
+      createWavBuffer(pcmData);
+
+    console.log(
+      "🎤 Отправляю голос на распознавание:",
+      wavBuffer.length,
+      "bytes"
+    );
+
+    /*
+     * Files API в текущем SDK ожидает путь к файлу,
+     * поэтому временно сохраняем WAV.
+     */
+
+    const tempDir =
+      path.join(
+        __dirname,
+        ".voice_tmp"
+      );
+
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(
+        tempDir,
+        { recursive: true }
       );
     }
 
-    const ffmpeg = spawn(ffmpegPath, [
-      "-f",
-      "s16le",
-      "-ar",
-      "24000",
-      "-ac",
-      "1",
-      "-i",
-      "pipe:0",
+    const fileName =
+      `voice-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2)}.wav`;
 
-      "-f",
-      "s16le",
-      "-ar",
-      "48000",
-      "-ac",
-      "2",
-      "pipe:1",
-    ]);
+    const filePath =
+      path.join(
+        tempDir,
+        fileName
+      );
 
-    const chunks = [];
+    fs.writeFileSync(
+      filePath,
+      wavBuffer
+    );
 
-    ffmpeg.stdout.on("data", (chunk) => {
-      chunks.push(chunk);
-    });
+    try {
+      const audioFile =
+        await gemini.files.upload({
+          file: filePath,
+          config: {
+            mimeType: "audio/wav",
+          },
+        });
 
-    ffmpeg.stderr.on("data", () => {
-      // ffmpeg пишет технические сообщения в stderr
-    });
+      console.log(
+        "🎤 Аудио загружено:",
+        audioFile.name
+      );
 
-    ffmpeg.on("error", reject);
+      const response =
+        await gemini.models.generateContent(
+          {
+            model:
+              VOICE_AI_TRANSCRIBE_MODEL,
 
-    ffmpeg.on("close", (code) => {
-      if (code !== 0) {
-        return reject(
-          new Error(
-            `ffmpeg завершился с кодом ${code}`
-          )
-        );
-      }
+            contents: [
+              audioFile,
+            ],
 
-      resolve(Buffer.concat(chunks));
-    });
-
-    ffmpeg.stdin.write(pcmBuffer);
-    ffmpeg.stdin.end();
-  });
-}
-
-// =========================
-// TRANSCRIBE VOICE
-// =========================
-
-async function transcribeVoice(pcmData) {
-  const wavBuffer = createWavBuffer(
-    pcmData
-  );
-
-  const base64Audio =
-    wavBuffer.toString("base64");
-
-  console.log(
-    "🎤 Отправляю голос",
-    pcmData.length,
-    "bytes в Gemini..."
-  );
-
-  const response =
-    await gemini.models.generateContent({
-      model: VOICE_AI_TEXT_MODEL,
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              inlineData: {
-                mimeType: "audio/wav",
-                data: base64Audio,
+            config: {
+              audioTranscriptionConfig: {
+                languageCodes: [
+                  "ru-RU",
+                ],
               },
             },
-            {
-              text: `
-Распознай речь пользователя.
-Верни только распознанный текст без пояснений.
-Если речи нет или звук неразборчивый — верни пустую строку.
-`,
-            },
-          ],
-        },
-      ],
-      config: {
-        systemInstruction:
-          VOICE_AI_SYSTEM,
-      },
-    });
+          }
+        );
 
-  return (response.text || "").trim();
+      const text =
+        (
+          response.text || ""
+        ).trim();
+
+      console.log(
+        `📝 Распознано: "${text}"`
+      );
+
+      return text;
+    } finally {
+      try {
+        fs.unlinkSync(
+          filePath
+        );
+      } catch {}
+    }
+  } catch (error) {
+    console.error(
+      "❌ Ошибка распознавания голоса:",
+      error
+    );
+
+    return "";
+  }
 }
 
-// =========================
-// VOICE AI TEXT RESPONSE
-// =========================
+// ============================================================
+// VOICE AI ANSWER
+// ============================================================
 
-async function askVoiceAI(text) {
+async function askVoiceAI(
+  text
+) {
   const response =
-    await gemini.models.generateContent({
-      model: VOICE_AI_TEXT_MODEL,
-      contents: text,
-      config: {
-        systemInstruction:
-          VOICE_AI_SYSTEM,
-      },
-    });
+    await gemini.models.generateContent(
+      {
+        model:
+          VOICE_AI_TEXT_MODEL,
+
+        contents: text,
+
+        config: {
+          systemInstruction:
+            VOICE_AI_SYSTEM,
+        },
+      }
+    );
 
   return (
     response.text ||
@@ -777,38 +1125,51 @@ async function askVoiceAI(text) {
   ).trim();
 }
 
-// =========================
+// ============================================================
 // TTS
-// =========================
+// ============================================================
 
-async function textToSpeech(text) {
-  console.log("🔊 Создаю голосовой ответ...");
+async function textToSpeech(
+  text
+) {
+  console.log(
+    "🔊 Создаю голосовой ответ..."
+  );
 
   const response =
-    await gemini.models.generateContent({
-      model: VOICE_AI_TTS_MODEL,
-      contents: text,
-      config: {
-        responseModalities: ["AUDIO"],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: {
-              voiceName: "Kore",
+    await gemini.models.generateContent(
+      {
+        model:
+          VOICE_AI_TTS_MODEL,
+
+        contents: text,
+
+        config: {
+          responseModalities: [
+            "AUDIO",
+          ],
+
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: "Kore",
+              },
             },
           },
         },
-      },
-    });
+      }
+    );
 
   const parts =
-    response.candidates?.[0]?.content?.parts ||
-    [];
+    response.candidates?.[0]
+      ?.content?.parts || [];
 
-  const audioPart = parts.find(
-    (part) =>
-      part.inlineData &&
-      part.inlineData.data
-  );
+  const audioPart =
+    parts.find(
+      (part) =>
+        part.inlineData &&
+        part.inlineData.data
+    );
 
   if (!audioPart) {
     throw new Error(
@@ -816,10 +1177,11 @@ async function textToSpeech(text) {
     );
   }
 
-  const pcmBuffer = Buffer.from(
-    audioPart.inlineData.data,
-    "base64"
-  );
+  const pcmBuffer =
+    Buffer.from(
+      audioPart.inlineData.data,
+      "base64"
+    );
 
   console.log(
     "🔊 TTS: получено",
@@ -841,11 +1203,14 @@ async function textToSpeech(text) {
   return discordPcm;
 }
 
-// =========================
+// ============================================================
 // PLAY VOICE AI
-// =========================
+// ============================================================
 
-async function playVoiceAI(connection, text) {
+async function playVoiceAI(
+  connection,
+  text
+) {
   const pcmData =
     await textToSpeech(text);
 
@@ -857,197 +1222,264 @@ async function playVoiceAI(connection, text) {
     voiceAISession &&
     !voiceAISession.player
   ) {
-    voiceAISession.player = player;
+    voiceAISession.player =
+      player;
   }
 
   const resource =
     createAudioResource(
-      require("stream").Readable.from(
-        pcmData
-      ),
+      Readable.from(pcmData),
       {
         inputType:
           StreamType.Raw,
+
         inlineVolume: false,
       }
     );
 
-  return new Promise((resolve, reject) => {
-    const onIdle = () => {
-      console.log(
-        "✓ Голосовой ответ закончен."
-      );
+  return new Promise(
+    (resolve, reject) => {
+      const onIdle =
+        () => {
+          console.log(
+            "✓ Голосовой ответ закончен."
+          );
 
-      player.removeListener(
-        "error",
-        onError
-      );
+          player.removeListener(
+            "error",
+            onError
+          );
 
-      resolve();
-    };
+          resolve();
+        };
 
-    const onError = (error) => {
-      player.removeListener(
+      const onError =
+        (error) => {
+          player.removeListener(
+            AudioPlayerStatus.Idle,
+            onIdle
+          );
+
+          console.error(
+            "❌ Ошибка AudioPlayer:",
+            error
+          );
+
+          reject(error);
+        };
+
+      player.once(
         AudioPlayerStatus.Idle,
         onIdle
       );
 
-      console.error(
-        "❌ Ошибка AudioPlayer:",
-        error
+      player.once(
+        "error",
+        onError
       );
 
-      reject(error);
-    };
+      connection.subscribe(
+        player
+      );
 
-    player.once(
-      AudioPlayerStatus.Idle,
-      onIdle
-    );
+      player.play(
+        resource
+      );
 
-    player.once(
-      "error",
-      onError
-    );
-
-    connection.subscribe(player);
-
-    player.play(resource);
-
-    console.log(
-      "🔊 AudioPlayer начал воспроизведение."
-    );
-  });
+      console.log(
+        "🔊 AudioPlayer начал воспроизведение."
+      );
+    }
+  );
 }
 
-// =========================
+// ============================================================
 // PROCESS VOICE AUDIO
-// =========================
+// ============================================================
 
 async function processVoiceAudio(
   userId,
   audioStream
 ) {
-  return new Promise((resolve) => {
-    const decoder =
-      new prism.opus.Decoder({
-        rate: 48000,
-        channels: 2,
-        frameSize: 960,
-      });
-
-    const chunks = [];
-
-    audioStream.on(
-      "data",
-      (chunk) => {
-        decoder.write(chunk);
-      }
-    );
-
-    decoder.on(
-      "data",
-      (chunk) => {
-        chunks.push(chunk);
-      }
-    );
-
-    const finish = async () => {
-      try {
-        const pcmData =
-          Buffer.concat(chunks);
-
-        console.log(
-          `🎤 END: ${userId}, ${pcmData.length} bytes`
+  return new Promise(
+    (resolve) => {
+      const decoder =
+        new prism.opus.Decoder(
+          {
+            rate: 48000,
+            channels: 2,
+            frameSize: 960,
+          }
         );
 
-        if (pcmData.length < 96000) {
-          console.log(
-            "⚠️ Слишком короткая запись, пропускаю."
-          );
+      const chunks = [];
 
-          return resolve();
+      let finished = false;
+
+      audioStream.on(
+        "data",
+        (chunk) => {
+          decoder.write(chunk);
         }
+      );
 
-        const recognized =
-          await transcribeVoice(
-            pcmData
-          );
-
-        if (!recognized) {
-          console.log(
-            "📝 Речь не распознана."
-          );
-
-          return resolve();
+      decoder.on(
+        "data",
+        (chunk) => {
+          chunks.push(chunk);
         }
+      );
 
-        console.log(
-          `📝 Распознано: "${recognized}"`
-        );
+      const finish =
+        async () => {
+          if (finished) {
+            return;
+          }
 
-        const answer =
-          await askVoiceAI(
-            recognized
+          finished = true;
+
+          try {
+            const pcmData =
+              Buffer.concat(
+                chunks
+              );
+
+            console.log(
+              `🎤 END: ${userId}, ${pcmData.length} bytes`
+            );
+
+            // Очень короткие записи не отправляем
+            if (
+              pcmData.length < 96000
+            ) {
+              console.log(
+                "⚠️ Слишком короткая запись, пропускаю."
+              );
+
+              return;
+            }
+
+            // Если другой запрос уже обрабатывается
+            if (
+              voiceAIProcessing
+            ) {
+              console.log(
+                "⏳ Voice AI уже обрабатывает другую речь, пропускаю."
+              );
+
+              return;
+            }
+
+            voiceAIProcessing =
+              true;
+
+            try {
+              // ==============================================
+              // SPEECH TO TEXT
+              // ==============================================
+
+              const recognized =
+                await transcribeVoice(
+                  pcmData
+                );
+
+              if (!recognized) {
+                console.log(
+                  "📝 Речь не распознана."
+                );
+
+                return;
+              }
+
+              console.log(
+                `📝 Распознано: "${recognized}"`
+              );
+
+              // ==============================================
+              // AI ANSWER
+              // ==============================================
+
+              const answer =
+                await askVoiceAI(
+                  recognized
+                );
+
+              console.log(
+                `🤖 Ответ: "${answer}"`
+              );
+
+              // ==============================================
+              // TTS
+              // ==============================================
+
+              if (
+                voiceAISession &&
+                voiceAISession.connection
+              ) {
+                await playVoiceAI(
+                  voiceAISession.connection,
+                  answer
+                );
+              }
+            } finally {
+              // Всегда освобождаем обработчик
+              voiceAIProcessing =
+                false;
+            }
+          } catch (error) {
+            console.error(
+              "❌ Ошибка обработки Voice AI:",
+              error
+            );
+
+            voiceAIProcessing =
+              false;
+          } finally {
+            resolve();
+          }
+        };
+
+      audioStream.once(
+        "end",
+        finish
+      );
+
+      audioStream.once(
+        "error",
+        (error) => {
+          console.error(
+            "❌ Ошибка входящего голосового потока:",
+            error
           );
 
-        console.log(
-          `🤖 Ответ: "${answer}"`
-        );
-
-        if (
-          voiceAISession &&
-          voiceAISession.connection
-        ) {
-          await playVoiceAI(
-            voiceAISession.connection,
-            answer
-          );
+          if (!finished) {
+            finished = true;
+            resolve();
+          }
         }
-      } catch (error) {
-        console.error(
-          "❌ Ошибка обработки Voice AI:",
-          error
-        );
-      }
+      );
 
-      resolve();
-    };
+      decoder.once(
+        "error",
+        (error) => {
+          console.error(
+            "❌ Ошибка Opus decoder:",
+            error
+          );
 
-    audioStream.once(
-      "end",
-      finish
-    );
-
-    audioStream.once(
-      "error",
-      (error) => {
-        console.error(
-          "❌ Ошибка входящего голосового потока:",
-          error
-        );
-
-        resolve();
-      }
-    );
-
-    decoder.once(
-      "error",
-      (error) => {
-        console.error(
-          "❌ Ошибка Opus decoder:",
-          error
-        );
-
-        resolve();
-      }
-    );
-  });
+          if (!finished) {
+            finished = true;
+            resolve();
+          }
+        }
+      );
+    }
+  );
 }
 
-// =========================
+// ============================================================
 // LISTEN TO USER
-// =========================
+// ============================================================
 
 function listenToUser(
   receiver,
@@ -1069,13 +1501,17 @@ function listenToUser(
   );
 
   const audioStream =
-    receiver.subscribe(userId, {
-      end: {
-        behavior:
-          EndBehaviorType.AfterSilence,
-        duration: 1000,
-      },
-    });
+    receiver.subscribe(
+      userId,
+      {
+        end: {
+          behavior:
+            EndBehaviorType.AfterSilence,
+
+          duration: 1000,
+        },
+      }
+    );
 
   processVoiceAudio(
     userId,
@@ -1083,9 +1519,9 @@ function listenToUser(
   );
 }
 
-// =========================
+// ============================================================
 // START VOICE AI
-// =========================
+// ============================================================
 
 async function startVoiceAI(
   channel
@@ -1105,18 +1541,25 @@ async function startVoiceAI(
   const connection =
     joinVoiceChannel({
       channelId: channel.id,
-      guildId: channel.guild.id,
+
+      guildId:
+        channel.guild.id,
+
       adapterCreator:
-        channel.guild.voiceAdapterCreator,
+        channel.guild
+          .voiceAdapterCreator,
 
       selfDeaf: false,
+
       selfMute: false,
     });
 
   const player =
     createAudioPlayer();
 
-  connection.subscribe(player);
+  connection.subscribe(
+    player
+  );
 
   voiceAISession = {
     connection,
@@ -1195,14 +1638,15 @@ async function startVoiceAI(
 
   return {
     ok: true,
+
     message:
       `Voice AI подключён к ${channel.name}.`,
   };
 }
 
-// =========================
+// ============================================================
 // STOP VOICE AI
-// =========================
+// ============================================================
 
 function stopVoiceAI() {
   if (!voiceAISession) {
@@ -1221,6 +1665,7 @@ function stopVoiceAI() {
   }
 
   voiceAISession = null;
+  voiceAIProcessing = false;
 
   console.log(
     "🛑 Voice AI остановлен."
@@ -1229,9 +1674,9 @@ function stopVoiceAI() {
   return true;
 }
 
-// =========================
+// ============================================================
 // SLASH COMMANDS
-// =========================
+// ============================================================
 
 const commands = [
   new SlashCommandBuilder()
@@ -1245,13 +1690,14 @@ const commands = [
     .setDescription(
       "Задать вопрос AI"
     )
-    .addStringOption((option) =>
-      option
-        .setName("prompt")
-        .setDescription(
-          "Ваш вопрос"
-        )
-        .setRequired(true)
+    .addStringOption(
+      (option) =>
+        option
+          .setName("prompt")
+          .setDescription(
+            "Ваш вопрос"
+          )
+          .setRequired(true)
     ),
 
   new SlashCommandBuilder()
@@ -1269,53 +1715,59 @@ const commands = [
   command.toJSON()
 );
 
-// =========================
+// ============================================================
 // INTERACTIONS
-// =========================
+// ============================================================
 
 client.on(
   "interactionCreate",
   async (interaction) => {
-    if (!interaction.isChatInputCommand()) {
+    if (
+      !interaction.isChatInputCommand()
+    ) {
       return;
     }
 
     try {
-      // =====================
+      // ======================================================
       // /stats
-      // =====================
+      // ======================================================
 
       if (
-        interaction.commandName === "stats"
+        interaction.commandName ===
+        "stats"
       ) {
-        await interaction.deferReply();
+        checkDailyReset();
 
-        const imageBuffer =
+        const image =
           await createStatsImage(
             interaction.user
           );
 
         const attachment =
           new AttachmentBuilder(
-            imageBuffer,
+            image,
             {
               name: "stats.png",
             }
           );
 
-        await interaction.editReply({
-          files: [attachment],
+        await interaction.reply({
+          files: [
+            attachment,
+          ],
         });
 
         return;
       }
 
-      // =====================
+      // ======================================================
       // /ai
-      // =====================
+      // ======================================================
 
       if (
-        interaction.commandName === "ai"
+        interaction.commandName ===
+        "ai"
       ) {
         const prompt =
           interaction.options.getString(
@@ -1325,90 +1777,67 @@ client.on(
 
         await interaction.deferReply();
 
-        try {
-          const answer =
-            await askAI(prompt);
+        const answer =
+          await askAI(prompt);
 
-          await interaction.editReply(
-            answer
-          );
-        } catch (error) {
-          console.error(
-            "❌ Ошибка AI:",
-            error
-          );
-
-          await interaction.editReply(
-            "❌ Произошла ошибка при обращении к AI."
-          );
-        }
+        await interaction.editReply(
+          answer
+        );
 
         return;
       }
 
-      // =====================
+      // ======================================================
       // /voiceai
-      // =====================
+      // ======================================================
 
       if (
         interaction.commandName ===
         "voiceai"
       ) {
-        if (!interaction.guild) {
-          return interaction.reply({
-            content:
-              "❌ Команда доступна только на сервере.",
-            ephemeral: true,
-          });
-        }
-
         const member =
-          interaction.guild.members.cache.get(
-            interaction.user.id
-          );
+          interaction.member;
 
         const channel =
           member?.voice?.channel;
 
         if (!channel) {
-          return interaction.reply({
+          await interaction.reply({
             content:
               "❌ Сначала зайди в голосовой канал.",
             ephemeral: true,
           });
+
+          return;
+        }
+
+        if (voiceAISession) {
+          await interaction.reply({
+            content:
+              "⚠️ Voice AI уже работает.",
+            ephemeral: true,
+          });
+
+          return;
         }
 
         await interaction.deferReply();
 
-        try {
-          const result =
-            await startVoiceAI(
-              channel
-            );
-
-          await interaction.editReply(
-            result.message
-          );
-        } catch (error) {
-          console.error(
-            "❌ Ошибка Voice AI:",
-            error
+        const result =
+          await startVoiceAI(
+            channel
           );
 
-          voiceAISession = null;
-
-          await interaction.editReply(
-            "❌ Ошибка Voice AI: " +
-              error.message
-          );
-        }
+        await interaction.editReply(
+          result.message
+        );
 
         return;
       }
 
-      // =====================
+      // ======================================================
       // /voiceai-stop
-      // =====================
+      // ======================================================
 
       if (
         interaction.commandName ===
@@ -1417,11 +1846,11 @@ client.on(
         const stopped =
           stopVoiceAI();
 
-        await interaction.reply(
-          stopped
+        await interaction.reply({
+          content: stopped
             ? "🛑 Voice AI остановлен."
-            : "ℹ️ Voice AI сейчас не запущен."
-        );
+            : "ℹ️ Voice AI сейчас не запущен.",
+        });
 
         return;
       }
@@ -1431,14 +1860,19 @@ client.on(
         error
       );
 
-      if (interaction.deferred) {
+      const message =
+        "❌ Произошла ошибка. Проверь Railway Logs.";
+
+      if (
+        interaction.replied ||
+        interaction.deferred
+      ) {
         await interaction.editReply(
-          "❌ Произошла ошибка."
+          message
         ).catch(() => {});
-      } else if (!interaction.replied) {
+      } else {
         await interaction.reply({
-          content:
-            "❌ Произошла ошибка.",
+          content: message,
           ephemeral: true,
         }).catch(() => {});
       }
@@ -1446,49 +1880,65 @@ client.on(
   }
 );
 
-// =========================
+// ============================================================
 // READY
-// =========================
+// ============================================================
 
-client.once("ready", async () => {
-  console.log(
-    `✓ Бот запущен: ${client.user.tag}`
-  );
-
-  await loadTemplate();
-
-  console.log(
-    "✓ Активные сессии успешно восстановлены!"
-  );
-
-  try {
-    const guild =
-      await client.guilds.fetch(
-        GUILD_ID
-      );
-
-    await guild.commands.set(
-      commands
+client.once(
+  "ready",
+  async () => {
+    console.log(
+      `✓ Бот запущен: ${client.user.tag}`
     );
+
+    await loadTemplate();
 
     console.log(
-      "✓ Команды зарегистрированы:"
+      "✓ Активные сессии успешно восстановлены!"
     );
 
-    console.log("  /stats");
-    console.log("  /ai");
-    console.log("  /voiceai");
-    console.log("  /voiceai-stop");
-  } catch (error) {
-    console.error(
-      "❌ Ошибка регистрации команд:",
-      error
-    );
+    try {
+      const guild =
+        await client.guilds.fetch(
+          GUILD_ID
+        );
+
+      await guild.commands.set(
+        commands
+      );
+
+      console.log(
+        "✓ Команды зарегистрированы:"
+      );
+
+      console.log(
+        "  /stats"
+      );
+
+      console.log(
+        "  /ai"
+      );
+
+      console.log(
+        "  /voiceai"
+      );
+
+      console.log(
+        "  /voiceai-stop"
+      );
+    } catch (error) {
+      console.error(
+        "❌ Ошибка регистрации команд:",
+        error
+      );
+    }
   }
-});
+);
 
-// =========================
+// ============================================================
 // LOGIN
-// =========================
+// ============================================================
 
-client.login(DISCORD_TOKEN);
+client.login(
+  DISCORD_TOKEN
+);
