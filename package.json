@@ -1,13 +1,14 @@
 {
   "name": "discord-stats-card-bot",
   "version": "1.0.0",
-  "description": "Discord.js bot that tracks server activity in JSON and generates a custom PNG statistics card.",
+  "description": "Discord.js bot that tracks stats",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "discord.js": "^14.0.0",
-    "@napi-rs/canvas": "^0.1.68"
+    "@google/genai": "^0.1.1",
+    "@napi-rs/canvas": "^0.1.68",
+    "discord.js": "^14.0.0"
   }
 }
