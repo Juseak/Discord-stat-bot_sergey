@@ -1,5 +1,3 @@
-"use strict";
-
 const {
   Client,
   GatewayIntentBits,
@@ -25,19 +23,14 @@ const {
 
 const prism = require("prism-media");
 const { GoogleGenAI } = require("@google/genai");
-
-const {
-  createCanvas,
-  loadImage,
-  GlobalFonts,
-} = require("@napi-rs/canvas");
+const { createCanvas, loadImage, GlobalFonts } = require("@napi-rs/canvas");
 
 const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
 
 // ============================================================
-// ENV
+// CONFIG
 // ============================================================
 
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
@@ -45,39 +38,48 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const GUILD_ID = process.env.GUILD_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-const AI_MODEL = "gemini-3.5-flash-lite";
-
 if (!DISCORD_TOKEN) {
-  console.error("❌ DISCORD_TOKEN не найден");
+  console.error("ERROR: DISCORD_TOKEN не найден");
   process.exit(1);
 }
 
 if (!CLIENT_ID) {
-  console.error("❌ CLIENT_ID не найден");
+  console.error("ERROR: CLIENT_ID не найден");
   process.exit(1);
 }
 
 if (!GUILD_ID) {
-  console.error("❌ GUILD_ID не найден");
+  console.error("ERROR: GUILD_ID не найден");
   process.exit(1);
 }
 
 if (!GEMINI_API_KEY) {
-  console.error("❌ GEMINI_API_KEY не найден");
+  console.error("ERROR: GEMINI_API_KEY не найден");
   process.exit(1);
 }
+
+// ============================================================
+// AI
+// ============================================================
+
+const AI_MODEL = "gemini-3.5-flash-lite";
+
+const gemini = new GoogleGenAI({
+  apiKey: GEMINI_API_KEY,
+});
 
 // ============================================================
 // PATHS
 // ============================================================
 
-const ROOT = __dirname;
+const ROOT_DIR = __dirname;
 
-const STATS_FILE = path.join(ROOT, "stats.json");
-const TEMPLATE_FILE = path.join(ROOT, "template.png");
-const FONT_FILE = path.join(ROOT, "font.ttf");
+const STATS_FILE = path.join(ROOT_DIR, "stats.json");
+const TEMPLATE_FILE = path.join(ROOT_DIR, "template.png");
+const FONT_FILE = path.join(ROOT_DIR, "font.ttf");
 
-const RUNTIME_DIR = path.join(ROOT, "runtime");
+const RUNTIME_DIR =
+  process.env.RUNTIME_DIR || path.join(ROOT_DIR, "runtime");
 
 const WHISPER_BIN =
   process.env.WHISPER_BIN ||
@@ -88,16 +90,12 @@ const WHISPER_MODEL =
   "/opt/whisper.cpp/models/ggml-base.bin";
 
 const PIPER_DATA_DIR =
-  process.env.PIPER_DATA_DIR ||
-  "/opt/piper";
+  process.env.PIPER_DATA_DIR || "/opt/piper";
 
 const PIPER_VOICE =
-  process.env.PIPER_VOICE ||
-  "ru_RU-dmitri-medium";
+  process.env.PIPER_VOICE || "ru_RU-dmitri-medium";
 
-fs.mkdirSync(RUNTIME_DIR, {
-  recursive: true,
-});
+fs.mkdirSync(RUNTIME_DIR, { recursive: true });
 
 // ============================================================
 // CLIENT
@@ -115,77 +113,22 @@ const client = new Client({
 });
 
 // ============================================================
-// GEMINI
-// ============================================================
-
-const gemini = new GoogleGenAI({
-  apiKey: GEMINI_API_KEY,
-});
-
-async function askAI(prompt) {
-  const response =
-    await gemini.models.generateContent({
-      model: AI_MODEL,
-      contents: prompt,
-      config: {
-        systemInstruction: `
-Ты обычный AI-ассистент Discord-бота.
-
-Отвечай на русском языке.
-
-Будь дружелюбным, понятным и естественным.
-
-Если это голосовой разговор:
-- отвечай коротко;
-- не используй Markdown;
-- не используй длинные списки;
-- не добавляй лишние пояснения;
-- ответ должен хорошо звучать вслух.
-
-Не представляйся человеком.
-        `,
-      },
-    });
-
-  return (
-    response.text ||
-    "Не удалось получить ответ."
-  );
-}
-
-// ============================================================
 // STATS
 // ============================================================
 
-let stats = {};
+let stats = {
+  users: {},
+};
 
-function loadStats() {
+if (fs.existsSync(STATS_FILE)) {
   try {
-    if (!fs.existsSync(STATS_FILE)) {
-      stats = {
-        users: {},
-      };
+    stats = JSON.parse(fs.readFileSync(STATS_FILE, "utf8"));
 
-      saveStats();
-      return;
-    }
-
-    stats = JSON.parse(
-      fs.readFileSync(
-        STATS_FILE,
-        "utf8"
-      )
-    );
-
-    if (!stats.users) {
+    if (!stats.users || typeof stats.users !== "object") {
       stats.users = {};
     }
   } catch (error) {
-    console.error(
-      "❌ Ошибка загрузки stats.json:",
-      error
-    );
-
+    console.error("Ошибка чтения stats.json:", error);
     stats = {
       users: {},
     };
@@ -196,311 +139,277 @@ function saveStats() {
   try {
     fs.writeFileSync(
       STATS_FILE,
-      JSON.stringify(
-        stats,
-        null,
-        2
-      ),
+      JSON.stringify(stats, null, 2),
       "utf8"
     );
   } catch (error) {
-    console.error(
-      "❌ Ошибка сохранения stats.json:",
-      error
-    );
+    console.error("Ошибка сохранения stats.json:", error);
   }
 }
 
-function ensureUser(userId) {
-  if (!stats.users) {
-    stats.users = {};
-  }
-
+function ensureUser(userId, username = "Unknown") {
   if (!stats.users[userId]) {
     stats.users[userId] = {
+      username,
       messages: 0,
       voiceSeconds: 0,
       discordSeconds: 0,
       gamingSeconds: 0,
       gamingGame: null,
 
-      activeVoiceSince: null,
-      activeDiscordSince: null,
-      activeGamingSince: null,
+      voiceJoinedAt: null,
+      discordActiveAt: null,
+      gamingActiveAt: null,
     };
   }
+
+  stats.users[userId].username = username;
 
   return stats.users[userId];
 }
 
-function getUserStats(userId) {
-  return ensureUser(userId);
-}
+// ============================================================
+// DAILY RESET
+// ============================================================
 
-function getDurationSeconds(start) {
-  if (!start) return 0;
+function dailyReset() {
+  const now = Date.now();
 
-  return Math.max(
-    0,
-    Math.floor(
-      (Date.now() - start) / 1000
-    )
-  );
-}
-
-function getVoiceSeconds(user) {
-  return (
-    Number(user.voiceSeconds || 0) +
-    getDurationSeconds(
-      user.activeVoiceSince
-    )
-  );
-}
-
-function getDiscordSeconds(user) {
-  return (
-    Number(user.discordSeconds || 0) +
-    getDurationSeconds(
-      user.activeDiscordSince
-    )
-  );
-}
-
-function getGamingSeconds(user) {
-  return (
-    Number(user.gamingSeconds || 0) +
-    getDurationSeconds(
-      user.activeGamingSince
-    )
-  );
-}
-
-function resetDailyStats() {
-  for (const userId of Object.keys(
-    stats.users || {}
-  )) {
-    const user = stats.users[userId];
-
+  for (const user of Object.values(stats.users)) {
     user.messages = 0;
     user.voiceSeconds = 0;
     user.discordSeconds = 0;
     user.gamingSeconds = 0;
     user.gamingGame = null;
 
-    if (user.activeVoiceSince) {
-      user.activeVoiceSince = Date.now();
+    if (user.voiceJoinedAt) {
+      user.voiceJoinedAt = now;
     }
 
-    if (user.activeDiscordSince) {
-      user.activeDiscordSince = Date.now();
+    if (user.discordActiveAt) {
+      user.discordActiveAt = now;
     }
 
-    if (user.activeGamingSince) {
-      user.activeGamingSince = Date.now();
+    if (user.gamingActiveAt) {
+      user.gamingActiveAt = now;
     }
   }
 
   saveStats();
 
-  console.log(
-    "🔄 Дневная статистика сброшена"
-  );
+  console.log("Статистика сброшена");
 }
 
-loadStats();
-
-setInterval(
-  saveStats,
-  30_000
-);
-
-// ============================================================
-// DAILY RESET
-// ============================================================
-
-let lastResetDay =
-  new Date().getDate();
+let lastResetDate = new Date().toDateString();
 
 setInterval(() => {
-  const now = new Date();
-  const currentDay =
-    now.getDate();
+  const currentDate = new Date().toDateString();
 
-  if (
-    currentDay !== lastResetDay
-  ) {
-    lastResetDay = currentDay;
-    resetDailyStats();
+  if (currentDate !== lastResetDate) {
+    lastResetDate = currentDate;
+    dailyReset();
   }
-}, 60_000);
+}, 60 * 1000);
 
 // ============================================================
-// MESSAGE TRACKING
+// STATS SESSION UPDATE
 // ============================================================
 
-client.on(
-  "messageCreate",
-  (message) => {
-    if (!message.guild) return;
-    if (message.author.bot) return;
+function updateActiveTime(user) {
+  const now = Date.now();
 
-    const user =
-      ensureUser(
-        message.author.id
-      );
+  if (user.voiceJoinedAt) {
+    user.voiceSeconds += Math.max(
+      0,
+      Math.floor((now - user.voiceJoinedAt) / 1000)
+    );
 
-    user.messages++;
-
-    saveStats();
+    user.voiceJoinedAt = now;
   }
-);
 
-// ============================================================
-// VOICE TRACKING
-// ============================================================
+  if (user.discordActiveAt) {
+    user.discordSeconds += Math.max(
+      0,
+      Math.floor((now - user.discordActiveAt) / 1000)
+    );
 
-client.on(
-  "voiceStateUpdate",
-  (oldState, newState) => {
-    const userId = newState.id;
-
-    if (
-      newState.member?.user?.bot
-    ) {
-      return;
-    }
-
-    const user =
-      ensureUser(userId);
-
-    const wasInVoice =
-      Boolean(oldState.channelId);
-
-    const isInVoice =
-      Boolean(newState.channelId);
-
-    if (
-      !wasInVoice &&
-      isInVoice
-    ) {
-      user.activeVoiceSince =
-        Date.now();
-    }
-
-    if (
-      wasInVoice &&
-      !isInVoice
-    ) {
-      user.voiceSeconds =
-        Number(
-          user.voiceSeconds || 0
-        ) +
-        getDurationSeconds(
-          user.activeVoiceSince
-        );
-
-      user.activeVoiceSince =
-        null;
-    }
-
-    saveStats();
+    user.discordActiveAt = now;
   }
-);
 
-// ============================================================
-// PRESENCE TRACKING
-// ============================================================
+  if (user.gamingActiveAt) {
+    user.gamingSeconds += Math.max(
+      0,
+      Math.floor((now - user.gamingActiveAt) / 1000)
+    );
 
-client.on(
-  "presenceUpdate",
-  (oldPresence, newPresence) => {
-    if (!newPresence?.userId) {
-      return;
-    }
-
-    const user =
-      ensureUser(
-        newPresence.userId
-      );
-
-    const playingActivity =
-      newPresence.activities?.find(
-        (activity) =>
-          activity.type ===
-          ActivityType.Playing
-      );
-
-    const wasGaming =
-      oldPresence?.activities?.some(
-        (activity) =>
-          activity.type ===
-          ActivityType.Playing
-      ) || false;
-
-    const isGaming =
-      Boolean(playingActivity);
-
-    if (
-      !wasGaming &&
-      isGaming
-    ) {
-      user.activeGamingSince =
-        Date.now();
-
-      user.gamingGame =
-        playingActivity.name;
-    }
-
-    if (
-      wasGaming &&
-      !isGaming
-    ) {
-      user.gamingSeconds =
-        Number(
-          user.gamingSeconds || 0
-        ) +
-        getDurationSeconds(
-          user.activeGamingSince
-        );
-
-      user.activeGamingSince =
-        null;
-
-      user.gamingGame =
-        null;
-    }
-
-    if (isGaming) {
-      user.gamingGame =
-        playingActivity.name;
-    }
-
-    saveStats();
+    user.gamingActiveAt = now;
   }
-);
+}
 
 // ============================================================
-// STATS CARD
+// MESSAGES
 // ============================================================
 
-function formatDuration(seconds) {
-  seconds = Math.max(
-    0,
-    Math.floor(seconds)
+client.on("messageCreate", (message) => {
+  if (!message.guild) return;
+  if (message.author.bot) return;
+
+  const user = ensureUser(
+    message.author.id,
+    message.author.username
   );
 
-  const hours =
-    Math.floor(
-      seconds / 3600
-    );
+  updateActiveTime(user);
 
-  const minutes =
-    Math.floor(
-      (seconds % 3600) / 60
-    );
+  user.messages++;
 
-  const secs =
-    seconds % 60;
+  saveStats();
+});
+
+// ============================================================
+// VOICE STATS
+// ============================================================
+
+client.on("voiceStateUpdate", (oldState, newState) => {
+  if (!newState.guild) return;
+
+  const member = newState.member;
+
+  if (!member || member.user.bot) return;
+
+  const user = ensureUser(
+    member.id,
+    member.user.username
+  );
+
+  const wasInVoice = !!oldState.channelId;
+  const isInVoice = !!newState.channelId;
+
+  if (!wasInVoice && isInVoice) {
+    user.voiceJoinedAt = Date.now();
+  }
+
+  if (wasInVoice && !isInVoice) {
+    updateActiveTime(user);
+    user.voiceJoinedAt = null;
+  }
+
+  saveStats();
+});
+
+// ============================================================
+// PRESENCE / GAMING STATS
+// ============================================================
+
+function getGamingActivity(presence) {
+  if (!presence) return null;
+
+  const activity = presence.activities.find(
+    (activity) => activity.type === ActivityType.Playing
+  );
+
+  return activity || null;
+}
+
+client.on("presenceUpdate", (oldPresence, newPresence) => {
+  if (!newPresence || !newPresence.guild) return;
+
+  const member = newPresence.member;
+
+  if (!member || member.user.bot) return;
+
+  const user = ensureUser(
+    member.id,
+    member.user.username
+  );
+
+  const activity = getGamingActivity(newPresence);
+
+  if (activity) {
+    if (!user.gamingActiveAt) {
+      user.gamingActiveAt = Date.now();
+    }
+
+    user.gamingGame = activity.name;
+  } else {
+    if (user.gamingActiveAt) {
+      updateActiveTime(user);
+      user.gamingActiveAt = null;
+    }
+
+    user.gamingGame = null;
+  }
+
+  saveStats();
+});
+
+// ============================================================
+// DISCORD ONLINE ACTIVITY
+// ============================================================
+
+client.on("presenceUpdate", (oldPresence, newPresence) => {
+  if (!newPresence || !newPresence.guild) return;
+
+  const member = newPresence.member;
+
+  if (!member || member.user.bot) return;
+
+  const user = ensureUser(
+    member.id,
+    member.user.username
+  );
+
+  const status = newPresence.status;
+
+  const active =
+    status === "online" ||
+    status === "idle" ||
+    status === "dnd";
+
+  if (active) {
+    if (!user.discordActiveAt) {
+      user.discordActiveAt = Date.now();
+    }
+  } else {
+    if (user.discordActiveAt) {
+      updateActiveTime(user);
+      user.discordActiveAt = null;
+    }
+  }
+
+  saveStats();
+});
+
+// ============================================================
+// PERIODIC STATS SAVE
+// ============================================================
+
+setInterval(() => {
+  for (const user of Object.values(stats.users)) {
+    updateActiveTime(user);
+  }
+
+  saveStats();
+}, 30 * 1000);
+
+// ============================================================
+// STATS IMAGE
+// ============================================================
+
+if (fs.existsSync(FONT_FILE)) {
+  try {
+    GlobalFonts.registerFromPath(FONT_FILE, "BotFont");
+  } catch (error) {
+    console.error("Ошибка загрузки шрифта:", error);
+  }
+}
+
+function formatSeconds(seconds) {
+  seconds = Math.max(0, Math.floor(seconds || 0));
+
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
 
   if (hours > 0) {
     return `${hours}ч ${minutes}м`;
@@ -513,536 +422,468 @@ function formatDuration(seconds) {
   return `${secs}с`;
 }
 
-async function createStatsImage(
-  member
-) {
+function drawRoundedRect(ctx, x, y, width, height, radius) {
+  ctx.beginPath();
+
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + width - radius, y);
+  ctx.quadraticCurveTo(
+    x + width,
+    y,
+    x + width,
+    y + radius
+  );
+
+  ctx.lineTo(x + width, y + height - radius);
+
+  ctx.quadraticCurveTo(
+    x + width,
+    y + height,
+    x + width - radius,
+    y + height
+  );
+
+  ctx.lineTo(x + radius, y + height);
+
+  ctx.quadraticCurveTo(
+    x,
+    y + height,
+    x,
+    y + height - radius
+  );
+
+  ctx.lineTo(x, y + radius);
+
+  ctx.quadraticCurveTo(
+    x,
+    y,
+    x + radius,
+    y
+  );
+
+  ctx.closePath();
+}
+
+async function createStatsImage(member) {
   const width = 1536;
   const height = 1536;
 
-  const canvas =
-    createCanvas(
-      width,
-      height
-    );
+  const canvas = createCanvas(width, height);
+  const ctx = canvas.getContext("2d");
 
-  const ctx =
-    canvas.getContext("2d");
+  if (fs.existsSync(TEMPLATE_FILE)) {
+    const template = await loadImage(TEMPLATE_FILE);
+    ctx.drawImage(template, 0, 0, width, height);
+  } else {
+    ctx.fillStyle = "#101010";
+    ctx.fillRect(0, 0, width, height);
+  }
 
-  if (
-    fs.existsSync(
-      TEMPLATE_FILE
-    )
-  ) {
-    const template =
-      await loadImage(
-        TEMPLATE_FILE
-      );
+  const user = ensureUser(
+    member.id,
+    member.user.username
+  );
+
+  updateActiveTime(user);
+
+  // ----------------------------------------------------------
+  // Avatar
+  // ----------------------------------------------------------
+
+  try {
+    const avatarURL = member.user.displayAvatarURL({
+      extension: "png",
+      size: 512,
+    });
+
+    const avatar = await loadImage(avatarURL);
+
+    ctx.save();
+
+    ctx.beginPath();
+    ctx.arc(768, 280, 150, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
 
     ctx.drawImage(
-      template,
-      0,
-      0,
-      width,
-      height
+      avatar,
+      618,
+      130,
+      300,
+      300
     );
-  } else {
-    ctx.fillStyle =
-      "#111111";
 
-    ctx.fillRect(
-      0,
-      0,
-      width,
-      height
-    );
+    ctx.restore();
+  } catch (error) {
+    console.error("Ошибка загрузки аватара:", error);
   }
 
-  if (
-    fs.existsSync(
-      FONT_FILE
-    )
-  ) {
-    try {
-      GlobalFonts.registerFromPath(
-        FONT_FILE,
-        "CustomFont"
-      );
+  // ----------------------------------------------------------
+  // Username
+  // ----------------------------------------------------------
 
-      ctx.font =
-        "48px CustomFont";
-    } catch {
-      ctx.font =
-        "48px Arial";
-    }
-  } else {
-    ctx.font =
-      "48px Arial";
-  }
-
-  const user =
-    getUserStats(
-      member.id
-    );
-
-  const voiceSeconds =
-    getVoiceSeconds(user);
-
-  const messageCount =
-    Number(
-      user.messages || 0
-    );
-
-  const discordSeconds =
-    getDiscordSeconds(user);
-
-  const gamingSeconds =
-    getGamingSeconds(user);
-
-  ctx.fillStyle =
-    "#ff4b4b";
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#ffffff";
+  ctx.font = 'bold 64px "BotFont"';
 
   ctx.fillText(
-    `VOICE  ${formatDuration(
-      voiceSeconds
-    )}`,
-    120,
+    member.displayName || member.user.username,
+    768,
     500
   );
 
-  ctx.fillStyle =
-    "#55a8ff";
+  // ----------------------------------------------------------
+  // Cards
+  // ----------------------------------------------------------
 
-  ctx.fillText(
-    `MESSAGE  ${messageCount}`,
-    120,
-    620
-  );
+  const cards = [
+    {
+      title: "VOICE",
+      value: formatSeconds(user.voiceSeconds),
+      color: "#ff4b4b",
+      x: 130,
+      y: 600,
+    },
+    {
+      title: "MESSAGE",
+      value: String(user.messages),
+      color: "#55a8ff",
+      x: 800,
+      y: 600,
+    },
+    {
+      title: "DISCORD",
+      value: formatSeconds(user.discordSeconds),
+      color: "#c080ff",
+      x: 130,
+      y: 830,
+    },
+    {
+      title: "GAMING",
+      value: formatSeconds(user.gamingSeconds),
+      color: "#43ff91",
+      x: 800,
+      y: 830,
+    },
+    {
+      title: "MUSIC",
+      value: "SOON",
+      color: "#ffd84a",
+      x: 130,
+      y: 1060,
+    },
+  ];
 
-  ctx.fillStyle =
-    "#c080ff";
+  for (const card of cards) {
+    const w = 606;
+    const h = 170;
 
-  ctx.fillText(
-    `DISCORD  ${formatDuration(
-      discordSeconds
-    )}`,
-    120,
-    740
-  );
+    ctx.save();
 
-  ctx.fillStyle =
-    "#43ff91";
+    drawRoundedRect(
+      ctx,
+      card.x,
+      card.y,
+      w,
+      h,
+      35
+    );
 
-  ctx.fillText(
-    `GAMING  ${formatDuration(
-      gamingSeconds
-    )}`,
-    120,
-    860
-  );
+    ctx.fillStyle = "rgba(0,0,0,0.45)";
+    ctx.fill();
 
-  ctx.fillStyle =
-    "#ffd84a";
+    ctx.strokeStyle = card.color;
+    ctx.lineWidth = 5;
+    ctx.stroke();
 
-  ctx.fillText(
-    "MUSIC  SOON",
-    120,
-    980
-  );
+    ctx.fillStyle = card.color;
+    ctx.textAlign = "left";
+    ctx.font = 'bold 32px "BotFont"';
 
-  return canvas.toBuffer(
-    "image/png"
-  );
+    ctx.fillText(
+      card.title,
+      card.x + 35,
+      card.y + 55
+    );
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = 'bold 50px "BotFont"';
+
+    ctx.fillText(
+      card.value,
+      card.x + 35,
+      card.y + 120
+    );
+
+    ctx.restore();
+  }
+
+  return canvas.toBuffer("image/png");
+}
+
+// ============================================================
+// AI TEXT
+// ============================================================
+
+async function askAI(prompt) {
+  try {
+    const response = await gemini.models.generateContent({
+      model: AI_MODEL,
+      contents: prompt,
+      config: {
+        systemInstruction: `
+Ты обычный AI-ассистент Discord-бота.
+
+Отвечай на русском языке.
+Будь полезным и понятным.
+Не используй лишние приветствия.
+Не повторяй вопрос пользователя.
+Если пользователь задаёт обычный вопрос — отвечай прямо.
+`,
+      },
+    });
+
+    return response.text || "Не удалось получить ответ.";
+  } catch (error) {
+    console.error("Gemini error:", error);
+
+    return "Не удалось получить ответ от AI.";
+  }
 }
 
 // ============================================================
 // ENTERTAINMENT
 // ============================================================
 
-const eightBallAnswers = [
-  "Да.",
-  "Нет.",
-  "Скорее всего.",
-  "Возможно.",
-  "Определённо.",
-  "Лучше не стоит.",
-  "Шансы хорошие.",
-  "Спроси позже.",
-  "Звёзды пока молчат.",
-  "Похоже на да.",
-];
-
-const riddles = [
-  {
-    question:
-      "Что можно увидеть с закрытыми глазами?",
-    answer:
-      "Сон.",
-  },
-  {
-    question:
-      "Что становится мокрым, пока сушит?",
-    answer:
-      "Полотенце.",
-  },
-  {
-    question:
-      "Что имеет много ключей, но не открывает ни одной двери?",
-    answer:
-      "Пианино.",
-  },
-  {
-    question:
-      "Что идёт, но не двигается?",
-    answer:
-      "Часы.",
-  },
-  {
-    question:
-      "Что принадлежит тебе, но другие используют это чаще?",
-    answer:
-      "Твоё имя.",
-  },
-];
-
 const facts = [
   "У осьминога три сердца.",
-  "Бананы с ботанической точки зрения считаются ягодами.",
-  "Мёд при правильном хранении может сохраняться очень долго.",
-  "У акул нет костей — их скелет состоит в основном из хряща.",
-  "Молния может нагревать воздух до очень высокой температуры.",
+  "Банан с ботанической точки зрения является ягодой.",
+  "Мёд практически не портится.",
+  "У акул появились раньше деревьев.",
+  "В космосе нет звука, потому что там практически нет среды для его распространения.",
 ];
 
 const jokes = [
-  "Почему программист любит тёмную тему? Потому что свет привлекает баги.",
-  "Я хотел рассказать шутку про UDP, но не знаю, дошла ли она.",
-  "Программист пошёл в магазин и купил 1 молоко. Если было молоко — купил ещё 10.",
-  "Почему компьютер устал? Слишком много окон.",
+  "Программист пошёл в магазин за хлебом. Жена сказала: «Возьми десять буханок, а если будут яйца — возьми десять». Он вернулся с десятью буханками хлеба.",
+  "Почему программист не любит природу? Там слишком много багов.",
+  "— Почему компьютер замёрз? — Потому что оставили Windows открытым.",
 ];
 
 const quotes = [
   "Большие вещи начинаются с маленьких шагов.",
   "Ошибки — часть процесса обучения.",
-  "Иногда лучший способ решить проблему — сделать паузу.",
-  "Главное — не переставать пробовать.",
+  "Лучше сделать и улучшить, чем бесконечно ждать идеального момента.",
+  "Знания становятся полезными, когда их применяют.",
 ];
 
-function randomItem(array) {
-  return array[
-    Math.floor(
-      Math.random() *
-        array.length
-    )
-  ];
-}
-
-function coinFlip() {
-  return Math.random() < 0.5
-    ? "Орёл 🪙"
-    : "Решка 🪙";
-}
-
-function rollDice(sides) {
-  return (
-    Math.floor(
-      Math.random() * sides
-    ) + 1
-  );
-}
+const riddles = [
+  {
+    question: "Что можно увидеть с закрытыми глазами?",
+    answer: "Сон",
+  },
+  {
+    question: "Чем больше из неё берёшь, тем больше она становится. Что это?",
+    answer: "Яма",
+  },
+  {
+    question: "Что принадлежит тебе, но другие используют это чаще тебя?",
+    answer: "Твоё имя",
+  },
+  {
+    question: "Что имеет много ключей, но не может открыть ни одной двери?",
+    answer: "Пианино",
+  },
+];
 
 // ============================================================
-// POLLS
+// POLL STORAGE
 // ============================================================
 
 const polls = new Map();
 
 // ============================================================
-// VOICE AI
+// VOICE AI STORAGE
 // ============================================================
 
-const voiceAISessions =
-  new Map();
+const voiceAISessions = new Map();
 
-function streamToBuffer(
-  stream
-) {
-  return new Promise(
-    (resolve, reject) => {
-      const chunks = [];
+// ============================================================
+// PROCESS HELPER
+// ============================================================
 
-      stream.on(
-        "data",
-        (chunk) => {
-          chunks.push(
-            Buffer.from(chunk)
-          );
-        }
-      );
+function runProcess(command, args = [], input = null) {
+  return new Promise((resolve, reject) => {
+    console.log(
+      `[PROCESS] ${command} ${args.join(" ")}`
+    );
 
-      stream.once(
-        "end",
-        () => {
-          resolve(
-            Buffer.concat(
-              chunks
-            )
-          );
-        }
-      );
+    const child = spawn(command, args, {
+      stdio: ["pipe", "pipe", "pipe"],
+    });
 
-      stream.once(
-        "error",
-        reject
-      );
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (data) => {
+      stdout += data.toString();
+    });
+
+    child.stderr.on("data", (data) => {
+      stderr += data.toString();
+    });
+
+    child.on("error", (error) => {
+      reject(error);
+    });
+
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve({
+          stdout,
+          stderr,
+        });
+      } else {
+        reject(
+          new Error(
+            `${command} завершился с кодом ${code}\n${stderr}`
+          )
+        );
+      }
+    });
+
+    if (input !== null && input !== undefined) {
+      child.stdin.write(input);
     }
-  );
+
+    child.stdin.end();
+  });
 }
 
-function makeWavHeader(
-  dataLength,
+// ============================================================
+// BUFFER / WAV
+// ============================================================
+
+function createWavBuffer(
+  pcmBuffer,
   sampleRate,
   channels,
-  bitsPerSample
+  bitsPerSample = 16
 ) {
-  const header =
-    Buffer.alloc(44);
-
-  header.write(
-    "RIFF",
-    0
-  );
-
-  header.writeUInt32LE(
-    36 + dataLength,
-    4
-  );
-
-  header.write(
-    "WAVE",
-    8
-  );
-
-  header.write(
-    "fmt ",
-    12
-  );
-
-  header.writeUInt32LE(
-    16,
-    16
-  );
-
-  header.writeUInt16LE(
-    1,
-    20
-  );
-
-  header.writeUInt16LE(
-    channels,
-    22
-  );
-
-  header.writeUInt32LE(
-    sampleRate,
-    24
-  );
-
   const byteRate =
     sampleRate *
     channels *
     (bitsPerSample / 8);
 
-  header.writeUInt32LE(
-    byteRate,
-    28
-  );
-
   const blockAlign =
-    channels *
-    (bitsPerSample / 8);
+    channels * (bitsPerSample / 8);
 
-  header.writeUInt16LE(
-    blockAlign,
-    32
+  const buffer = Buffer.alloc(44 + pcmBuffer.length);
+
+  buffer.write("RIFF", 0);
+  buffer.writeUInt32LE(
+    36 + pcmBuffer.length,
+    4
   );
 
-  header.writeUInt16LE(
-    bitsPerSample,
-    34
-  );
+  buffer.write("WAVE", 8);
 
-  header.write(
-    "data",
-    36
-  );
+  buffer.write("fmt ", 12);
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(channels, 22);
+  buffer.writeUInt32LE(sampleRate, 24);
+  buffer.writeUInt32LE(byteRate, 28);
+  buffer.writeUInt16LE(blockAlign, 32);
+  buffer.writeUInt16LE(bitsPerSample, 34);
 
-  header.writeUInt32LE(
-    dataLength,
+  buffer.write("data", 36);
+  buffer.writeUInt32LE(
+    pcmBuffer.length,
     40
   );
 
-  return header;
+  pcmBuffer.copy(buffer, 44);
+
+  return buffer;
 }
 
-function pcm48StereoToWav16Mono(
-  pcm
+// ============================================================
+// 48 KHZ STEREO -> 16 KHZ MONO
+// ============================================================
+
+function convert48kStereoTo16kMono(
+  pcmBuffer
 ) {
-  const bytesPerFrame = 4;
+  const inputChannels = 2;
+  const inputRate = 48000;
+  const outputRate = 16000;
 
-  const frameCount =
+  const bytesPerSample = 2;
+
+  const inputFrames =
     Math.floor(
-      pcm.length /
-        bytesPerFrame
+      pcmBuffer.length /
+        (inputChannels * bytesPerSample)
     );
 
-  // 48000 -> 16000
-  const outputFrames =
-    Math.floor(
-      frameCount / 3
+  const outputFrames = Math.floor(
+    inputFrames *
+      outputRate /
+      inputRate
+  );
+
+  const output = Buffer.alloc(
+    outputFrames * bytesPerSample
+  );
+
+  for (let i = 0; i < outputFrames; i++) {
+    const sourceFrame = Math.floor(
+      i * inputRate / outputRate
     );
 
-  const output =
-    Buffer.alloc(
-      outputFrames * 2
-    );
+    const leftOffset =
+      sourceFrame *
+      inputChannels *
+      bytesPerSample;
 
-  for (
-    let i = 0;
-    i < outputFrames;
-    i++
-  ) {
-    let sum = 0;
+    const rightOffset =
+      leftOffset + bytesPerSample;
 
-    for (
-      let j = 0;
-      j < 3;
-      j++
+    if (
+      rightOffset + 1 >=
+      pcmBuffer.length
     ) {
-      const sourceFrame =
-        i * 3 + j;
-
-      const offset =
-        sourceFrame *
-        bytesPerFrame;
-
-      const left =
-        pcm.readInt16LE(
-          offset
-        );
-
-      const right =
-        pcm.readInt16LE(
-          offset + 2
-        );
-
-      sum +=
-        (left + right) /
-        2;
+      break;
     }
 
-    let value =
-      Math.round(
-        sum / 3
+    const left =
+      pcmBuffer.readInt16LE(leftOffset);
+
+    const right =
+      pcmBuffer.readInt16LE(rightOffset);
+
+    const mono =
+      Math.max(
+        -32768,
+        Math.min(
+          32767,
+          Math.round(
+            (left + right) / 2
+          )
+        )
       );
 
-    if (
-      value > 32767
-    ) {
-      value = 32767;
-    }
-
-    if (
-      value < -32768
-    ) {
-      value = -32768;
-    }
-
     output.writeInt16LE(
-      value,
-      i * 2
+      mono,
+      i * bytesPerSample
     );
   }
 
-  const header =
-    makeWavHeader(
-      output.length,
-      16000,
-      1,
-      16
-    );
-
-  return Buffer.concat([
-    header,
+  return createWavBuffer(
     output,
-  ]);
-}
-
-// ============================================================
-// RUN PROCESS
-// ============================================================
-
-function runProcess(
-  command,
-  args
-) {
-  return new Promise(
-    (resolve, reject) => {
-      const child =
-        spawn(
-          command,
-          args,
-          {
-            stdio: [
-              "pipe",
-              "pipe",
-              "pipe",
-            ],
-          }
-        );
-
-      let stdout = "";
-      let stderr = "";
-
-      child.stdout.on(
-        "data",
-        (data) => {
-          stdout +=
-            data.toString();
-        }
-      );
-
-      child.stderr.on(
-        "data",
-        (data) => {
-          stderr +=
-            data.toString();
-        }
-      );
-
-      child.on(
-        "error",
-        reject
-      );
-
-      child.on(
-        "close",
-        (code) => {
-          if (code === 0) {
-            resolve({
-              stdout,
-              stderr,
-            });
-
-            return;
-          }
-
-          reject(
-            new Error(
-              `${command} завершился с кодом ${code}\n${stderr}`
-            )
-          );
-        }
-      );
-    }
+    16000,
+    1,
+    16
   );
 }
 
@@ -1050,89 +891,79 @@ function runProcess(
 // WHISPER
 // ============================================================
 
-async function transcribeWithWhisper(
-  wavFile
-) {
-  const baseName =
-    path.join(
-      RUNTIME_DIR,
-      `whisper-${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2)}`
-    );
+async function transcribeWithWhisper(wavPath) {
+  console.log(
+    "Whisper: распознаю:",
+    wavPath
+  );
 
-  await runProcess(
+  if (!fs.existsSync(WHISPER_BIN)) {
+    throw new Error(
+      `Whisper binary не найден: ${WHISPER_BIN}`
+    );
+  }
+
+  if (!fs.existsSync(WHISPER_MODEL)) {
+    throw new Error(
+      `Whisper model не найден: ${WHISPER_MODEL}`
+    );
+  }
+
+  const result = await runProcess(
     WHISPER_BIN,
     [
       "-m",
       WHISPER_MODEL,
       "-f",
-      wavFile,
+      wavPath,
       "-l",
       "ru",
-      "-otxt",
-      "-of",
-      baseName,
       "-nt",
       "-np",
     ]
   );
 
-  const txtFile =
-    `${baseName}.txt`;
+  const text = result.stdout
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join(" ")
+    .trim();
 
-  if (
-    !fs.existsSync(
-      txtFile
-    )
-  ) {
-    return "";
-  }
-
-  const text =
-    fs
-      .readFileSync(
-        txtFile,
-        "utf8"
-      )
-      .replace(
-        /\s+/g,
-        " "
-      )
-      .trim();
-
-  try {
-    fs.unlinkSync(
-      txtFile
-    );
-  } catch {}
+  console.log(
+    "Whisper результат:",
+    text
+  );
 
   return text;
 }
 
 // ============================================================
-// PIPER
+// PIPER TTS
 // ============================================================
 
-async function textToSpeech(
-  text,
-  outputFile
-) {
-  const cleanText =
-    text
-      .replace(
-        /[*_`#>]/g,
-        ""
-      )
-      .replace(
-        /\s+/g,
-        " "
-      )
-      .trim()
-      .slice(0, 1500);
+async function textToSpeech(text) {
+  const output = path.join(
+    RUNTIME_DIR,
+    `tts-${Date.now()}-${Math.random()
+      .toString(36)
+      .slice(2)}.wav`
+  );
 
-  if (!cleanText) {
-    return false;
+  console.log(
+    "Piper: генерирую:",
+    text
+  );
+
+  console.log(
+    "Piper output:",
+    output
+  );
+
+  if (!fs.existsSync(PIPER_DATA_DIR)) {
+    throw new Error(
+      `Piper data dir не найден: ${PIPER_DATA_DIR}`
+    );
   }
 
   await runProcess(
@@ -1145,93 +976,256 @@ async function textToSpeech(
       "--model",
       PIPER_VOICE,
       "--output_file",
-      outputFile,
-      "--",
-      cleanText,
-    ]
+      output,
+    ],
+    text
   );
 
-  return fs.existsSync(
-    outputFile
+  if (!fs.existsSync(output)) {
+    throw new Error(
+      `Piper не создал WAV: ${output}`
+    );
+  }
+
+  const stat = fs.statSync(output);
+
+  console.log(
+    "Piper WAV создан:",
+    {
+      path: output,
+      size: stat.size,
+    }
+  );
+
+  if (stat.size < 1000) {
+    throw new Error(
+      "Piper создал подозрительно маленький WAV"
+    );
+  }
+
+  return output;
+}
+
+// ============================================================
+// PLAY WAV THROUGH FFMPEG
+// ============================================================
+
+async function playVoiceFile(
+  connection,
+  filePath,
+  session = null
+) {
+  console.log(
+    "Audio: начинаю воспроизведение:",
+    filePath
+  );
+
+  if (!fs.existsSync(filePath)) {
+    throw new Error(
+      `Файл не найден: ${filePath}`
+    );
+  }
+
+  const player = createAudioPlayer();
+
+  if (session) {
+    session.player = player;
+  }
+
+  player.on("error", (error) => {
+    console.error(
+      "AudioPlayer ERROR:",
+      error
+    );
+  });
+
+  player.on(
+    AudioPlayerStatus.Playing,
+    () => {
+      console.log(
+        "AudioPlayer: PLAYING"
+      );
+    }
+  );
+
+  player.on(
+    AudioPlayerStatus.Idle,
+    () => {
+      console.log(
+        "AudioPlayer: IDLE"
+      );
+    }
+  );
+
+  connection.subscribe(player);
+
+  // ----------------------------------------------------------
+  // FFmpeg:
+  // WAV -> 48kHz stereo signed 16-bit PCM
+  // ----------------------------------------------------------
+
+  console.log(
+    "FFmpeg: конвертирую WAV в PCM..."
+  );
+
+  const ffmpeg = spawn(
+    "ffmpeg",
+    [
+      "-hide_banner",
+      "-loglevel",
+      "error",
+
+      "-i",
+      filePath,
+
+      "-f",
+      "s16le",
+      "-ar",
+      "48000",
+      "-ac",
+      "2",
+
+      "pipe:1",
+    ],
+    {
+      stdio: [
+        "ignore",
+        "pipe",
+        "pipe",
+      ],
+    }
+  );
+
+  let ffmpegError = "";
+
+  ffmpeg.stderr.on(
+    "data",
+    (data) => {
+      ffmpegError +=
+        data.toString();
+    }
+  );
+
+  ffmpeg.on("error", (error) => {
+    console.error(
+      "FFmpeg ERROR:",
+      error
+    );
+  });
+
+  const resource =
+    createAudioResource(
+      ffmpeg.stdout,
+      {
+        inputType: StreamType.Raw,
+        inlineVolume: false,
+      }
+    );
+
+  player.play(resource);
+
+  console.log(
+    "Audio: player.play() вызван"
+  );
+
+  await new Promise(
+    (resolve, reject) => {
+      let finished = false;
+
+      const finish = (fn, value) => {
+        if (finished) return;
+
+        finished = true;
+
+        clearTimeout(timeout);
+
+        fn(value);
+      };
+
+      const timeout = setTimeout(() => {
+        finish(
+          reject,
+          new Error(
+            "Таймаут воспроизведения аудио"
+          )
+        );
+      }, 30000);
+
+      player.once(
+        AudioPlayerStatus.Idle,
+        () => {
+          finish(
+            resolve
+          );
+        }
+      );
+
+      player.once(
+        "error",
+        (error) => {
+          finish(
+            reject,
+            error
+          );
+        }
+      );
+
+      ffmpeg.once(
+        "close",
+        (code) => {
+          if (
+            code !== 0 &&
+            !finished
+          ) {
+            finish(
+              reject,
+              new Error(
+                `FFmpeg завершился с кодом ${code}\n${ffmpegError}`
+              )
+            );
+          }
+        }
+      );
+    }
+  );
+
+  if (session) {
+    session.player = null;
+  }
+
+  console.log(
+    "Audio: воспроизведение завершено"
   );
 }
 
 // ============================================================
-// PLAY AUDIO
+// VOICE AUDIO BUFFER
 // ============================================================
 
-function playVoiceFile(
-  session,
-  file
-) {
+function streamToBuffer(stream) {
   return new Promise(
     (resolve, reject) => {
-      if (
-        !session ||
-        !session.connection
-      ) {
-        reject(
-          new Error(
-            "Voice connection отсутствует"
-          )
+      const chunks = [];
+
+      stream.on("data", (chunk) => {
+        chunks.push(
+          Buffer.from(chunk)
         );
+      });
 
-        return;
-      }
-
-      const resource =
-        createAudioResource(
-          file,
-          {
-            inputType:
-              StreamType.Arbitrary,
-          }
+      stream.on("end", () => {
+        resolve(
+          Buffer.concat(chunks)
         );
+      });
 
-      const cleanup =
-        () => {
-          session.player.off(
-            AudioPlayerStatus.Idle,
-            onIdle
-          );
-
-          session.player.off(
-            "error",
-            onError
-          );
-        };
-
-      const onIdle =
-        () => {
-          cleanup();
-          resolve();
-        };
-
-      const onError =
-        (error) => {
-          cleanup();
-          reject(error);
-        };
-
-      session.player.once(
-        AudioPlayerStatus.Idle,
-        onIdle
-      );
-
-      session.player.once(
-        "error",
-        onError
-      );
-
-      session.player.play(
-        resource
-      );
+      stream.on("error", reject);
     }
   );
 }
 
 // ============================================================
-// VOICE AI AUDIO PROCESSING
+// PROCESS ONE USER SPEECH
 // ============================================================
 
 async function processVoiceAudio(
@@ -1239,173 +1233,160 @@ async function processVoiceAudio(
   userId,
   opusStream
 ) {
-  if (!session.active) {
-    return;
-  }
-
   if (session.busy) {
+    console.log(
+      "Voice AI занят, пропускаю речь:",
+      userId
+    );
+
     return;
   }
 
   session.busy = true;
 
-  let wavFile = null;
-  let ttsFile = null;
+  const pcmDecoder =
+    new prism.opus.Decoder({
+      frameSize: 960,
+      channels: 2,
+      rate: 48000,
+    });
 
   try {
-    const decoder =
-      new prism.opus.Decoder(
-        {
-          frameSize: 960,
-          channels: 2,
-          rate: 48000,
-        }
-      );
+    opusStream.pipe(
+      pcmDecoder
+    );
 
-    const pcmStream =
-      opusStream.pipe(
-        decoder
-      );
+    console.log(
+      "Voice AI: записываю речь пользователя:",
+      userId
+    );
 
-    const pcm =
+    const pcmBuffer =
       await streamToBuffer(
-        pcmStream
+        pcmDecoder
       );
 
-    if (!session.active) {
+    console.log(
+      "Voice AI: получено PCM:",
+      pcmBuffer.length,
+      "bytes"
+    );
+
+    if (pcmBuffer.length < 5000) {
+      console.log(
+        "Voice AI: слишком короткий звук"
+      );
+
       return;
     }
 
-    if (
-      pcm.length < 4000
-    ) {
-      return;
-    }
+    // --------------------------------------------------------
+    // Convert Discord audio -> Whisper WAV
+    // --------------------------------------------------------
 
-    const wav =
-      pcm48StereoToWav16Mono(
-        pcm
+    const wavBuffer =
+      convert48kStereoTo16kMono(
+        pcmBuffer
       );
 
-    wavFile =
-      path.join(
-        RUNTIME_DIR,
-        `input-${Date.now()}-${Math.random()
-          .toString(36)
-          .slice(2)}.wav`
-      );
+    const inputWav = path.join(
+      RUNTIME_DIR,
+      `voice-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2)}.wav`
+    );
 
     fs.writeFileSync(
-      wavFile,
-      wav
+      inputWav,
+      wavBuffer
     );
 
     console.log(
-      `🎙️ Whisper: распознаю речь пользователя ${userId}`
+      "Voice AI: WAV для Whisper:",
+      inputWav,
+      fs.statSync(inputWav).size
     );
 
-    const transcript =
-      await transcribeWithWhisper(
-        wavFile
-      );
+    // --------------------------------------------------------
+    // STT
+    // --------------------------------------------------------
 
-    if (!transcript) {
-      return;
-    }
-
-    console.log(
-      `🗣️ Пользователь: ${transcript}`
-    );
-
-    if (!session.active) {
-      return;
-    }
-
-    const prompt = `
-Это голосовой разговор в Discord.
-
-Пользователь сказал:
-"${transcript}"
-
-Ответь ему естественно и коротко на русском языке.
-
-Требования:
-- без Markdown;
-- без длинных списков;
-- без лишних пояснений;
-- ответ должен хорошо звучать при озвучке;
-- не повторяй вопрос пользователя целиком.
-`;
-
-    let answer;
+    let text;
 
     try {
-      answer =
-        await askAI(
-          prompt
+      text =
+        await transcribeWithWhisper(
+          inputWav
         );
-    } catch (error) {
-      console.error(
-        "❌ Gemini Voice AI:",
-        error
-      );
-
-      answer =
-        "Извини, сейчас я не смог придумать ответ.";
+    } finally {
+      try {
+        fs.unlinkSync(inputWav);
+      } catch {}
     }
 
-    if (!session.active) {
+    if (!text) {
+      console.log(
+        "Voice AI: Whisper ничего не распознал"
+      );
+
       return;
     }
 
     console.log(
-      `🤖 AI: ${answer}`
+      "Пользователь сказал:",
+      text
     );
 
-    ttsFile =
-      path.join(
-        RUNTIME_DIR,
-        `tts-${Date.now()}-${Math.random()
-          .toString(36)
-          .slice(2)}.wav`
+    // --------------------------------------------------------
+    // GEMINI
+    // --------------------------------------------------------
+
+    const answer =
+      await askAI(
+        `Пользователь в голосовом Discord-канале сказал:
+
+"${text}"
+
+Ответь ему естественно и кратко, как голосовой собеседник.
+Не используй Markdown.
+Не используй списки без необходимости.
+Ответ должен хорошо звучать при озвучивании.`
       );
 
-    await textToSpeech(
-      answer,
-      ttsFile
+    console.log(
+      "Voice AI ответ:",
+      answer
     );
 
-    if (!session.active) {
-      return;
+    if (!answer) return;
+
+    // --------------------------------------------------------
+    // TTS
+    // --------------------------------------------------------
+
+    const ttsFile =
+      await textToSpeech(
+        answer
+      );
+
+    try {
+      await playVoiceFile(
+        session.connection,
+        ttsFile,
+        session
+      );
+    } finally {
+      try {
+        fs.unlinkSync(ttsFile);
+      } catch {}
     }
-
-    await playVoiceFile(
-      session,
-      ttsFile
-    );
   } catch (error) {
     console.error(
-      "❌ Ошибка обработки Voice AI:",
+      "Voice AI processing ERROR:",
       error
     );
   } finally {
     session.busy = false;
-
-    if (wavFile) {
-      try {
-        fs.unlinkSync(
-          wavFile
-        );
-      } catch {}
-    }
-
-    if (ttsFile) {
-      try {
-        fs.unlinkSync(
-          ttsFile
-        );
-      } catch {}
-    }
   }
 }
 
@@ -1417,28 +1398,30 @@ function stopVoiceAISession(
   guildId
 ) {
   const session =
-    voiceAISessions.get(
-      guildId
-    );
+    voiceAISessions.get(guildId);
 
   if (!session) {
     return false;
   }
 
-  session.active = false;
+  console.log(
+    "Voice AI: остановка"
+  );
+
+  session.stopped = true;
 
   try {
-    session.player.stop();
+    if (session.player) {
+      session.player.stop();
+    }
   } catch {}
 
   try {
-    session.connection.receiver.speaking.removeAllListeners(
-      "start"
-    );
-  } catch {}
-
-  try {
-    session.connection.destroy();
+    if (
+      session.connection
+    ) {
+      session.connection.destroy();
+    }
   } catch {}
 
   voiceAISessions.delete(
@@ -1453,30 +1436,55 @@ function stopVoiceAISession(
 // ============================================================
 
 async function startVoiceAISession(
-  guild,
-  member
+  interaction
 ) {
-  stopVoiceAISession(
-    guild.id
-  );
+  const guild =
+    interaction.guild;
 
-  const channel =
+  const member =
+    interaction.member;
+
+  if (!guild || !member) {
+    throw new Error(
+      "Guild/member не найден"
+    );
+  }
+
+  const voiceChannel =
     member.voice.channel;
 
-  if (!channel) {
+  if (!voiceChannel) {
     throw new Error(
-      "Пользователь не находится в голосовом канале."
+      "Сначала зайди в голосовой канал."
+    );
+  }
+
+  // ----------------------------------------------------------
+  // Если уже работает — сначала останавливаем старую сессию
+  // ----------------------------------------------------------
+
+  if (
+    voiceAISessions.has(
+      guild.id
+    )
+  ) {
+    stopVoiceAISession(
+      guild.id
     );
   }
 
   console.log(
-    `🔊 Voice AI: подключаюсь к ${channel.name}`
+    `Voice AI: подключаюсь к ${voiceChannel.name}`
   );
+
+  // ----------------------------------------------------------
+  // Join
+  // ----------------------------------------------------------
 
   const connection =
     joinVoiceChannel({
       channelId:
-        channel.id,
+        voiceChannel.id,
 
       guildId:
         guild.id,
@@ -1488,28 +1496,16 @@ async function startVoiceAISession(
       selfMute: false,
     });
 
-  const player =
-    createAudioPlayer();
-
-  connection.subscribe(
-    player
-  );
-
   const session = {
-    guildId:
-      guild.id,
-
-    channelId:
-      channel.id,
-
+    guildId: guild.id,
+    channelId: voiceChannel.id,
     connection,
-    player,
 
-    active: true,
+    player: null,
+
     busy: false,
-
-    processingUsers:
-      new Set(),
+    stopped: false,
+    speakingUsers: new Set(),
   };
 
   voiceAISessions.set(
@@ -1518,62 +1514,60 @@ async function startVoiceAISession(
   );
 
   // ----------------------------------------------------------
-  // Ждём подключения
+  // Ready
   // ----------------------------------------------------------
 
   await new Promise(
     (resolve, reject) => {
       const timeout =
-        setTimeout(
-          () => {
-            reject(
-              new Error(
-                "Voice connection timeout"
-              )
-            );
-          },
-          15_000
+        setTimeout(() => {
+          reject(
+            new Error(
+              "Не удалось дождаться подключения к Discord Voice."
+            )
+          );
+        }, 30000);
+
+      const onReady = () => {
+        clearTimeout(timeout);
+
+        connection.off(
+          "error",
+          onError
         );
 
-      if (
-        connection.state.status ===
-        VoiceConnectionStatus.Ready
-      ) {
-        clearTimeout(
-          timeout
+        console.log(
+          "Voice AI подключён"
         );
 
         resolve();
-        return;
-      }
+      };
 
-      const onReady =
-        () => {
-          clearTimeout(
-            timeout
-          );
+      const onError = (error) => {
+        clearTimeout(timeout);
 
-          connection.off(
-            VoiceConnectionStatus.Ready,
-            onReady
-          );
+        connection.off(
+          VoiceConnectionStatus.Ready,
+          onReady
+        );
 
-          resolve();
-        };
+        reject(error);
+      };
 
       connection.once(
         VoiceConnectionStatus.Ready,
         onReady
       );
+
+      connection.once(
+        "error",
+        onError
+      );
     }
   );
 
-  console.log(
-    "✅ Voice AI подключён"
-  );
-
   // ----------------------------------------------------------
-  // Приветствие
+  // Greeting
   // ----------------------------------------------------------
 
   const greetings = [
@@ -1585,144 +1579,103 @@ async function startVoiceAISession(
   ];
 
   const greeting =
-    randomItem(
-      greetings
-    );
+    greetings[
+      Math.floor(
+        Math.random() *
+          greetings.length
+      )
+    ];
 
   console.log(
-    `🔊 Приветствие: ${greeting}`
+    "Приветствие:",
+    greeting
   );
 
-  const greetingFile =
-    path.join(
-      RUNTIME_DIR,
-      `greeting-${Date.now()}-${Math.random()
-        .toString(36)
-        .slice(2)}.wav`
-    );
-
   try {
-    await textToSpeech(
-      greeting,
-      greetingFile
-    );
-
-    if (
-      session.active &&
-      fs.existsSync(
-        greetingFile
-      )
-    ) {
-      await playVoiceFile(
-        session,
-        greetingFile
+    const greetingFile =
+      await textToSpeech(
+        greeting
       );
-    }
-  } catch (error) {
-    console.error(
-      "❌ Ошибка приветствия:",
-      error
-    );
-  } finally {
+
     try {
-      if (
-        fs.existsSync(
-          greetingFile
-        )
-      ) {
+      await playVoiceFile(
+        connection,
+        greetingFile,
+        session
+      );
+    } finally {
+      try {
         fs.unlinkSync(
           greetingFile
         );
-      }
-    } catch {}
+      } catch {}
+    }
+  } catch (error) {
+    console.error(
+      "Ошибка приветствия:",
+      error
+    );
+  }
+
+  if (session.stopped) {
+    return;
   }
 
   // ----------------------------------------------------------
-  // Начинаем слушать
+  // Receive audio
   // ----------------------------------------------------------
 
-  if (!session.active) {
-    return session;
-  }
+  const receiver =
+    connection.receiver;
 
-  connection.receiver.speaking.on(
+  receiver.speaking.on(
     "start",
     async (userId) => {
-      if (!session.active) {
-        return;
-      }
-
-      // Игнорируем самого бота
-      if (
-        userId ===
-        client.user.id
-      ) {
-        return;
-      }
-
-      // Пока AI отвечает — не принимаем новую речь
-      if (session.busy) {
+      if (session.stopped) {
         return;
       }
 
       if (
-        session.processingUsers.has(
+        session.speakingUsers.has(
           userId
         )
       ) {
         return;
       }
 
-      const guildMember =
-        guild.members.cache.get(
-          userId
-        );
+      session.speakingUsers.add(
+        userId
+      );
 
-      if (!guildMember) {
-        return;
-      }
-
-      // Не слушаем других ботов
-      if (
-        guildMember.user.bot
-      ) {
-        return;
-      }
-
-      session.processingUsers.add(
+      console.log(
+        "Voice AI: пользователь начал говорить:",
         userId
       );
 
       try {
-        console.log(
-          `🎤 Начал говорить: ${guildMember.user.username}`
-        );
-
-        const audioStream =
-          connection.receiver.subscribe(
+        const opusStream =
+          receiver.subscribe(
             userId,
             {
-              end: {
-                behavior:
-                  EndBehaviorType.AfterSilence,
+              end:
+                EndBehaviorType.AfterSilence,
 
-                duration: 800,
-              },
+              endTimeout: 800,
             }
           );
 
         await processVoiceAudio(
           session,
           userId,
-          audioStream
+          opusStream
         );
       } catch (error) {
         console.error(
-          "❌ Ошибка получения аудио:",
+          "Voice receive ERROR:",
           error
         );
       } finally {
-        session.processingUsers.delete(
+        session.speakingUsers.delete(
           userId
         );
       }
@@ -1733,43 +1686,19 @@ async function startVoiceAISession(
     VoiceConnectionStatus.Disconnected,
     () => {
       console.log(
-        "🔇 Voice AI отключён от канала"
+        "Voice AI: соединение отключено"
       );
-
-      const current =
-        voiceAISessions.get(
-          guild.id
-        );
-
-      if (
-        current === session
-      ) {
-        voiceAISessions.delete(
-          guild.id
-        );
-      }
     }
   );
 
   connection.on(
     VoiceConnectionStatus.Destroyed,
     () => {
-      const current =
-        voiceAISessions.get(
-          guild.id
-        );
-
-      if (
-        current === session
-      ) {
-        voiceAISessions.delete(
-          guild.id
-        );
-      }
+      console.log(
+        "Voice AI: соединение уничтожено"
+      );
     }
   );
-
-  return session;
 }
 
 // ============================================================
@@ -1781,6 +1710,14 @@ const commands = [
     .setName("stats")
     .setDescription(
       "Показать статистику пользователя"
+    )
+    .addUserOption((option) =>
+      option
+        .setName("user")
+        .setDescription(
+          "Пользователь"
+        )
+        .setRequired(false)
     ),
 
   new SlashCommandBuilder()
@@ -1788,20 +1725,19 @@ const commands = [
     .setDescription(
       "Задать вопрос AI"
     )
-    .addStringOption(
-      (option) =>
-        option
-          .setName("вопрос")
-          .setDescription(
-            "Ваш вопрос"
-          )
-          .setRequired(true)
+    .addStringOption((option) =>
+      option
+        .setName("prompt")
+        .setDescription(
+          "Ваш вопрос"
+        )
+        .setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName("voiceai")
     .setDescription(
-      "Запустить голосовой AI"
+      "Подключить голосовой AI"
     ),
 
   new SlashCommandBuilder()
@@ -1821,16 +1757,15 @@ const commands = [
     .setDescription(
       "Бросить кубик"
     )
-    .addIntegerOption(
-      (option) =>
-        option
-          .setName("грани")
-          .setDescription(
-            "Количество граней"
-          )
-          .setRequired(false)
-          .setMinValue(2)
-          .setMaxValue(100)
+    .addIntegerOption((option) =>
+      option
+        .setName("sides")
+        .setDescription(
+          "Количество граней"
+        )
+        .setRequired(false)
+        .setMinValue(2)
+        .setMaxValue(100)
     ),
 
   new SlashCommandBuilder()
@@ -1838,38 +1773,37 @@ const commands = [
     .setDescription(
       "Задать вопрос магическому шару"
     )
-    .addStringOption(
-      (option) =>
-        option
-          .setName("вопрос")
-          .setDescription(
-            "Ваш вопрос"
-          )
-          .setRequired(true)
+    .addStringOption((option) =>
+      option
+        .setName("question")
+        .setDescription(
+          "Вопрос"
+        )
+        .setRequired(true)
     ),
 
   new SlashCommandBuilder()
     .setName("riddle")
     .setDescription(
-      "Загадка"
+      "Получить загадку"
     ),
 
   new SlashCommandBuilder()
     .setName("fact")
     .setDescription(
-      "Случайный факт"
+      "Получить интересный факт"
     ),
 
   new SlashCommandBuilder()
     .setName("joke")
     .setDescription(
-      "Случайная шутка"
+      "Получить шутку"
     ),
 
   new SlashCommandBuilder()
     .setName("quote")
     .setDescription(
-      "Случайная цитата"
+      "Получить цитату"
     ),
 
   new SlashCommandBuilder()
@@ -1877,14 +1811,45 @@ const commands = [
     .setDescription(
       "Создать опрос"
     )
-    .addStringOption(
-      (option) =>
-        option
-          .setName("вопрос")
-          .setDescription(
-            "Вопрос для опроса"
-          )
-          .setRequired(true)
+    .addStringOption((option) =>
+      option
+        .setName("question")
+        .setDescription(
+          "Вопрос опроса"
+        )
+        .setRequired(true)
+    )
+    .addStringOption((option) =>
+      option
+        .setName("option1")
+        .setDescription(
+          "Вариант 1"
+        )
+        .setRequired(true)
+    )
+    .addStringOption((option) =>
+      option
+        .setName("option2")
+        .setDescription(
+          "Вариант 2"
+        )
+        .setRequired(true)
+    )
+    .addStringOption((option) =>
+      option
+        .setName("option3")
+        .setDescription(
+          "Вариант 3"
+        )
+        .setRequired(false)
+    )
+    .addStringOption((option) =>
+      option
+        .setName("option4")
+        .setDescription(
+          "Вариант 4"
+        )
+        .setRequired(false)
     ),
 ].map((command) =>
   command.toJSON()
@@ -1895,12 +1860,15 @@ const commands = [
 // ============================================================
 
 async function registerCommands() {
-  const rest =
-    new REST({
-      version: "10",
-    }).setToken(
-      DISCORD_TOKEN
-    );
+  const rest = new REST({
+    version: "10",
+  }).setToken(
+    DISCORD_TOKEN
+  );
+
+  console.log(
+    "Регистрация slash-команд..."
+  );
 
   await rest.put(
     Routes.applicationGuildCommands(
@@ -1913,43 +1881,9 @@ async function registerCommands() {
   );
 
   console.log(
-    "✅ Slash-команды зарегистрированы"
+    "Slash-команды зарегистрированы"
   );
 }
-
-// ============================================================
-// READY
-// ============================================================
-
-client.once(
-  "clientReady",
-  async () => {
-    console.log(
-      `🤖 Бот запущен: ${client.user.tag}`
-    );
-
-    console.log(
-      `🧠 Gemini: ${AI_MODEL}`
-    );
-
-    console.log(
-      `🎙️ Whisper: ${WHISPER_BIN}`
-    );
-
-    console.log(
-      `🔊 Piper: ${PIPER_VOICE}`
-    );
-
-    try {
-      await registerCommands();
-    } catch (error) {
-      console.error(
-        "❌ Ошибка регистрации команд:",
-        error
-      );
-    }
-  }
-);
 
 // ============================================================
 // INTERACTIONS
@@ -1958,153 +1892,132 @@ client.once(
 client.on(
   "interactionCreate",
   async (interaction) => {
-    try {
-      // ======================================================
-      // BUTTONS
-      // ======================================================
+    if (
+      !interaction.isChatInputCommand() &&
+      !interaction.isButton()
+    ) {
+      return;
+    }
 
-      if (
-        interaction.isButton()
-      ) {
-        const [
-          type,
-          pollId,
-        ] =
-          interaction.customId.split(
-            ":"
-          );
+    // ========================================================
+    // POLL BUTTONS
+    // ========================================================
 
-        if (
-          type !==
-            "poll_yes" &&
-          type !==
-            "poll_no"
-        ) {
-          return;
-        }
+    if (interaction.isButton()) {
+      const poll =
+        polls.get(
+          interaction.message.id
+        );
 
-        const poll =
-          polls.get(
-            pollId
-          );
+      if (!poll) {
+        await interaction.reply({
+          content:
+            "Этот опрос больше не активен.",
+          ephemeral: true,
+        });
 
-        if (!poll) {
-          await interaction.reply(
-            {
-              content:
-                "Этот опрос уже закончился.",
-              ephemeral: true,
-            }
-          );
+        return;
+      }
 
-          return;
-        }
-
-        if (
-          poll.yes.has(
-            interaction.user.id
-          ) ||
-          poll.no.has(
-            interaction.user.id
+      const optionIndex =
+        Number(
+          interaction.customId.replace(
+            "poll_",
+            ""
           )
-        ) {
-          await interaction.reply(
-            {
-              content:
-                "Ты уже голосовал.",
-              ephemeral: true,
-            }
-          );
-
-          return;
-        }
-
-        if (
-          type ===
-          "poll_yes"
-        ) {
-          poll.yes.add(
-            interaction.user.id
-          );
-        } else {
-          poll.no.add(
-            interaction.user.id
-          );
-        }
-
-        await interaction.reply(
-          {
-            content:
-              "Голос засчитан!",
-            ephemeral: true,
-          }
         );
-
-        const yesCount =
-          poll.yes.size;
-
-        const noCount =
-          poll.no.size;
-
-        const updatedRow =
-          new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId(
-                `poll_yes:${pollId}`
-              )
-              .setLabel(
-                `Да: ${yesCount}`
-              )
-              .setStyle(
-                ButtonStyle.Success
-              ),
-
-            new ButtonBuilder()
-              .setCustomId(
-                `poll_no:${pollId}`
-              )
-              .setLabel(
-                `Нет: ${noCount}`
-              )
-              .setStyle(
-                ButtonStyle.Danger
-              )
-          );
-
-        await interaction.message.edit(
-          {
-            components: [
-              updatedRow,
-            ],
-          }
-        );
-
-        return;
-      }
-
-      // ======================================================
-      // CHAT INPUT
-      // ======================================================
 
       if (
-        !interaction.isChatInputCommand()
+        !Number.isInteger(
+          optionIndex
+        ) ||
+        optionIndex < 0 ||
+        optionIndex >=
+          poll.options.length
       ) {
         return;
       }
 
-      // ======================================================
+      const previous =
+        poll.votes.get(
+          interaction.user.id
+        );
+
+      if (
+        previous !== undefined
+      ) {
+        poll.counts[previous]--;
+      }
+
+      poll.votes.set(
+        interaction.user.id,
+        optionIndex
+      );
+
+      poll.counts[optionIndex]++;
+
+      const total =
+        poll.counts.reduce(
+          (a, b) => a + b,
+          0
+        );
+
+      const lines =
+        poll.options.map(
+          (option, index) => {
+            const count =
+              poll.counts[index];
+
+            const percent =
+              total > 0
+                ? Math.round(
+                    (count / total) *
+                      100
+                  )
+                : 0;
+
+            return `${index + 1}. ${option} — ${count} (${percent}%)`;
+          }
+        );
+
+      await interaction.update({
+        content:
+          `📊 **${poll.question}**\n\n` +
+          lines.join("\n"),
+        components:
+          interaction.message.components,
+      });
+
+      return;
+    }
+
+    // ========================================================
+    // COMMANDS
+    // ========================================================
+
+    try {
+      // ------------------------------------------------------
       // /stats
-      // ======================================================
+      // ------------------------------------------------------
 
       if (
         interaction.commandName ===
         "stats"
       ) {
+        const selected =
+          interaction.options.getUser(
+            "user"
+          ) || interaction.user;
+
+        const member =
+          await interaction.guild.members
+            .fetch(selected.id);
+
         await interaction.deferReply();
 
         const image =
           await createStatsImage(
-            interaction.member
+            member
           );
 
         const attachment =
@@ -2115,183 +2028,128 @@ client.on(
             }
           );
 
-        await interaction.editReply(
-          {
-            files: [
-              attachment,
-            ],
-          }
-        );
+        await interaction.editReply({
+          files: [attachment],
+        });
 
         return;
       }
 
-      // ======================================================
+      // ------------------------------------------------------
       // /ai
-      // ======================================================
+      // ------------------------------------------------------
 
       if (
         interaction.commandName ===
         "ai"
       ) {
-        const question =
+        const prompt =
           interaction.options.getString(
-            "вопрос",
+            "prompt",
             true
           );
 
         await interaction.deferReply();
 
-        try {
-          const answer =
-            await askAI(
-              question
-            );
+        const answer =
+          await askAI(prompt);
 
-          await interaction.editReply(
-            answer.slice(
-              0,
-              2000
-            )
-          );
-        } catch (error) {
-          console.error(
-            "❌ /ai:",
-            error
-          );
-
-          await interaction.editReply(
-            "❌ Не удалось получить ответ от AI."
-          );
-        }
+        await interaction.editReply(
+          answer
+        );
 
         return;
       }
 
-      // ======================================================
+      // ------------------------------------------------------
       // /voiceai
-      // ======================================================
+      // ------------------------------------------------------
 
       if (
         interaction.commandName ===
         "voiceai"
       ) {
-        if (
-          !interaction.guild
-        ) {
-          await interaction.reply(
-            {
-              content:
-                "Эта команда работает только на сервере.",
-              ephemeral: true,
-            }
-          );
-
-          return;
-        }
-
         const member =
           interaction.member;
 
         if (
           !member.voice.channel
         ) {
-          await interaction.reply(
-            {
-              content:
-                "Сначала зайди в голосовой канал.",
-              ephemeral: true,
-            }
-          );
+          await interaction.reply({
+            content:
+              "Сначала зайди в голосовой канал.",
+            ephemeral: true,
+          });
 
           return;
         }
 
         await interaction.deferReply();
 
-        try {
-          // Теперь здесь ждём не только подключения,
-          // но и завершения приветствия.
-          await startVoiceAISession(
-            interaction.guild,
-            member
-          );
+        console.log(
+          `Voice AI: подключаюсь к ${member.voice.channel.name}`
+        );
 
-          await interaction.editReply(
-            "🎙️ Голосовой AI запущен!\n\nЯ подключился к каналу, поздоровался и теперь слушаю вас.\n\nГоворите обычным голосом — я буду распознавать речь и отвечать.\n\nДля остановки: `/voiceai-stop`"
-          );
-        } catch (error) {
-          console.error(
-            "❌ /voiceai:",
-            error
-          );
+        await startVoiceAISession(
+          interaction
+        );
 
-          stopVoiceAISession(
-            interaction.guild.id
-          );
-
-          await interaction.editReply(
-            "❌ Не удалось запустить голосовой AI."
-          );
-        }
+        await interaction.editReply(
+          "🎙️ Voice AI подключён. Я слушаю голосовой канал."
+        );
 
         return;
       }
 
-      // ======================================================
+      // ------------------------------------------------------
       // /voiceai-stop
-      // ======================================================
+      // ------------------------------------------------------
 
       if (
         interaction.commandName ===
         "voiceai-stop"
       ) {
-        if (
-          !interaction.guild
-        ) {
-          await interaction.reply(
-            {
-              content:
-                "Эта команда работает только на сервере.",
-              ephemeral: true,
-            }
-          );
-
-          return;
-        }
-
         const stopped =
           stopVoiceAISession(
             interaction.guild.id
           );
 
-        await interaction.reply(
-          stopped
-            ? "🔇 Голосовой AI остановлен."
-            : "Голосовой AI сейчас не запущен."
-        );
+        if (stopped) {
+          await interaction.reply(
+            "🔇 Voice AI остановлен."
+          );
+        } else {
+          await interaction.reply(
+            "Voice AI сейчас не запущен."
+          );
+        }
 
         return;
       }
 
-      // ======================================================
+      // ------------------------------------------------------
       // /coinflip
-      // ======================================================
+      // ------------------------------------------------------
 
       if (
         interaction.commandName ===
         "coinflip"
       ) {
+        const result =
+          Math.random() < 0.5
+            ? "🪙 Орёл!"
+            : "🪙 Решка!";
+
         await interaction.reply(
-          `🪙 ${coinFlip()}`
+          result
         );
 
         return;
       }
 
-      // ======================================================
+      // ------------------------------------------------------
       // /dice
-      // ======================================================
+      // ------------------------------------------------------
 
       if (
         interaction.commandName ===
@@ -2299,13 +2157,13 @@ client.on(
       ) {
         const sides =
           interaction.options.getInteger(
-            "грани"
+            "sides"
           ) || 6;
 
         const result =
-          rollDice(
-            sides
-          );
+          Math.floor(
+            Math.random() * sides
+          ) + 1;
 
         await interaction.reply(
           `🎲 Выпало: **${result}** из ${sides}`
@@ -2314,103 +2172,135 @@ client.on(
         return;
       }
 
-      // ======================================================
+      // ------------------------------------------------------
       // /8ball
-      // ======================================================
+      // ------------------------------------------------------
 
       if (
         interaction.commandName ===
         "8ball"
       ) {
-        const question =
-          interaction.options.getString(
-            "вопрос",
-            true
-          );
+        const answers = [
+          "Да.",
+          "Нет.",
+          "Скорее всего.",
+          "Вполне возможно.",
+          "Определённо да.",
+          "Определённо нет.",
+          "Лучше пока не знать.",
+          "Спроси позже.",
+        ];
+
+        const answer =
+          answers[
+            Math.floor(
+              Math.random() *
+                answers.length
+            )
+          ];
 
         await interaction.reply(
-          `🎱 **${question}**\n\n${randomItem(
-            eightBallAnswers
-          )}`
+          `🎱 ${answer}`
         );
 
         return;
       }
 
-      // ======================================================
+      // ------------------------------------------------------
       // /riddle
-      // ======================================================
+      // ------------------------------------------------------
 
       if (
         interaction.commandName ===
         "riddle"
       ) {
         const riddle =
-          randomItem(
-            riddles
-          );
+          riddles[
+            Math.floor(
+              Math.random() *
+                riddles.length
+            )
+          ];
 
         await interaction.reply(
-          `🧩 **Загадка**\n\n${riddle.question}\n\n||Ответ: ${riddle.answer}||`
+          `🧩 **Загадка:**\n${riddle.question}\n\n||Ответ: ${riddle.answer}||`
         );
 
         return;
       }
 
-      // ======================================================
+      // ------------------------------------------------------
       // /fact
-      // ======================================================
+      // ------------------------------------------------------
 
       if (
         interaction.commandName ===
         "fact"
       ) {
+        const fact =
+          facts[
+            Math.floor(
+              Math.random() *
+                facts.length
+            )
+          ];
+
         await interaction.reply(
-          `🧠 **Факт:** ${randomItem(
-            facts
-          )}`
+          `💡 ${fact}`
         );
 
         return;
       }
 
-      // ======================================================
+      // ------------------------------------------------------
       // /joke
-      // ======================================================
+      // ------------------------------------------------------
 
       if (
         interaction.commandName ===
         "joke"
       ) {
+        const joke =
+          jokes[
+            Math.floor(
+              Math.random() *
+                jokes.length
+            )
+          ];
+
         await interaction.reply(
-          `😂 ${randomItem(
-            jokes
-          )}`
+          `😂 ${joke}`
         );
 
         return;
       }
 
-      // ======================================================
+      // ------------------------------------------------------
       // /quote
-      // ======================================================
+      // ------------------------------------------------------
 
       if (
         interaction.commandName ===
         "quote"
       ) {
+        const quote =
+          quotes[
+            Math.floor(
+              Math.random() *
+                quotes.length
+            )
+          ];
+
         await interaction.reply(
-          `💬 «${randomItem(
-            quotes
-          )}»`
+          `💬 «${quote}»`
         );
 
         return;
       }
 
-      // ======================================================
+      // ------------------------------------------------------
       // /poll
-      // ======================================================
+      // ------------------------------------------------------
 
       if (
         interaction.commandName ===
@@ -2418,128 +2308,212 @@ client.on(
       ) {
         const question =
           interaction.options.getString(
-            "вопрос",
+            "question",
             true
           );
 
-        const pollId =
-          `${Date.now()}-${Math.random()
-            .toString(36)
-            .slice(2)}`;
+        const options = [];
 
-        polls.set(
-          pollId,
-          {
-            question,
-            yes: new Set(),
-            no: new Set(),
+        for (
+          let i = 1;
+          i <= 4;
+          i++
+        ) {
+          const option =
+            interaction.options.getString(
+              `option${i}`
+            );
+
+          if (option) {
+            options.push(option);
           }
-        );
+        }
 
-        const row =
-          new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-              .setCustomId(
-                `poll_yes:${pollId}`
-              )
-              .setLabel(
-                "Да: 0"
-              )
-              .setStyle(
-                ButtonStyle.Success
-              ),
+        if (
+          options.length < 2
+        ) {
+          await interaction.reply({
+            content:
+              "Нужно минимум два варианта.",
+            ephemeral: true,
+          });
 
-            new ButtonBuilder()
-              .setCustomId(
-                `poll_no:${pollId}`
-              )
-              .setLabel(
-                "Нет: 0"
-              )
-              .setStyle(
-                ButtonStyle.Danger
-              )
+          return;
+        }
+
+        const buttons =
+          options.map(
+            (option, index) =>
+              new ButtonBuilder()
+                .setCustomId(
+                  `poll_${index}`
+                )
+                .setLabel(
+                  `${index + 1}. ${option}`
+                )
+                .setStyle(
+                  ButtonStyle.Primary
+                )
           );
 
-        await interaction.reply(
-          {
-            content:
-              `📊 **Опрос**\n\n${question}`,
-            components: [
-              row,
-            ],
-          }
-        );
+        const rows = [];
 
-        setTimeout(
-          () => {
-            polls.delete(
-              pollId
-            );
-          },
-          24 *
-            60 *
-            60 *
-            1000
+        for (
+          let i = 0;
+          i < buttons.length;
+          i += 2
+        ) {
+          rows.push(
+            new ActionRowBuilder().addComponents(
+              buttons.slice(
+                i,
+                i + 2
+              )
+            )
+          );
+        }
+
+        const message =
+          await interaction.reply({
+            content:
+              `📊 **${question}**\n\n` +
+              options
+                .map(
+                  (option, index) =>
+                    `${index + 1}. ${option} — 0 (0%)`
+                )
+                .join("\n"),
+            components: rows,
+            fetchReply: true,
+          });
+
+        polls.set(
+          message.id,
+          {
+            question,
+            options,
+            counts:
+              options.map(
+                () => 0
+              ),
+            votes: new Map(),
+          }
         );
 
         return;
       }
     } catch (error) {
       console.error(
-        "❌ Ошибка interaction:",
+        "Interaction ERROR:",
         error
       );
 
-      try {
-        if (
-          interaction.deferred
-        ) {
-          await interaction.editReply(
-            "❌ Произошла ошибка."
-          );
-        } else if (
-          !interaction.replied
-        ) {
-          await interaction.reply(
-            {
-              content:
-                "❌ Произошла ошибка.",
-              ephemeral: true,
-            }
-          );
-        }
-      } catch {}
+      if (
+        interaction.deferred ||
+        interaction.replied
+      ) {
+        await interaction.editReply(
+          "Произошла ошибка при выполнении команды."
+        ).catch(() => {});
+      } else {
+        await interaction.reply({
+          content:
+            "Произошла ошибка при выполнении команды.",
+          ephemeral: true,
+        }).catch(() => {});
+      }
     }
   }
 );
 
 // ============================================================
-// ERRORS
+// READY
 // ============================================================
 
-process.on(
-  "unhandledRejection",
-  (error) => {
-    console.error(
-      "❌ Unhandled Rejection:",
-      error
+client.once(
+  "ready",
+  async () => {
+    console.log(
+      `Бот запущен: ${client.user.tag}`
+    );
+
+    client.user.setPresence({
+      activities: [
+        {
+          name: "с сервером",
+          type: ActivityType.Watching,
+        },
+      ],
+      status: "online",
+    });
+
+    try {
+      await registerCommands();
+    } catch (error) {
+      console.error(
+        "Ошибка регистрации команд:",
+        error
+      );
+    }
+  }
+);
+
+// ============================================================
+// SHUTDOWN
+// ============================================================
+
+async function shutdown() {
+  console.log(
+    "Завершение работы..."
+  );
+
+  for (const guildId of voiceAISessions.keys()) {
+    stopVoiceAISession(
+      guildId
     );
   }
+
+  saveStats();
+
+  try {
+    client.destroy();
+  } catch {}
+
+  process.exit(0);
+}
+
+process.on(
+  "SIGINT",
+  shutdown
+);
+
+process.on(
+  "SIGTERM",
+  shutdown
 );
 
 process.on(
   "uncaughtException",
   (error) => {
     console.error(
-      "❌ Uncaught Exception:",
+      "UNCAUGHT EXCEPTION:",
+      error
+    );
+  }
+);
+
+process.on(
+  "unhandledRejection",
+  (error) => {
+    console.error(
+      "UNHANDLED REJECTION:",
       error
     );
   }
 );
 
 // ============================================================
-// START
+// LOGIN
 // ============================================================
 
 client.login(
