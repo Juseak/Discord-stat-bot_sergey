@@ -12,7 +12,11 @@ const {
 } = require("discord.js");
 
 const { GoogleGenAI } = require("@google/genai");
-const { createCanvas, loadImage, GlobalFonts } = require("@napi-rs/canvas");
+const {
+  createCanvas,
+  loadImage,
+  GlobalFonts,
+} = require("@napi-rs/canvas");
 
 const fs = require("fs");
 const path = require("path");
@@ -28,17 +32,17 @@ const CLIENT_ID = process.env.CLIENT_ID;
 const AI_MODEL = "gemini-3.5-flash-lite";
 
 if (!TOKEN) {
-  console.error("❌ DISCORD_TOKEN не найден в Variables");
+  console.error("❌ DISCORD_TOKEN не найден");
   process.exit(1);
 }
 
 if (!GEMINI_API_KEY) {
-  console.error("❌ GEMINI_API_KEY не найден в Variables");
+  console.error("❌ GEMINI_API_KEY не найден");
   process.exit(1);
 }
 
 if (!CLIENT_ID) {
-  console.error("❌ CLIENT_ID не найден в Variables");
+  console.error("❌ CLIENT_ID не найден");
   process.exit(1);
 }
 
@@ -65,9 +69,20 @@ const client = new Client({
 // FILES
 // ======================================================
 
-const STATS_FILE = path.join(__dirname, "stats.json");
-const TEMPLATE_FILE = path.join(__dirname, "template.png");
-const FONT_FILE = path.join(__dirname, "font.ttf");
+const STATS_FILE = path.join(
+  __dirname,
+  "stats.json"
+);
+
+const TEMPLATE_FILE = path.join(
+  __dirname,
+  "template.png"
+);
+
+const FONT_FILE = path.join(
+  __dirname,
+  "font.ttf"
+);
 
 // ======================================================
 // STATS
@@ -83,12 +98,19 @@ function loadStats() {
     }
 
     stats = JSON.parse(
-      fs.readFileSync(STATS_FILE, "utf8")
+      fs.readFileSync(
+        STATS_FILE,
+        "utf8"
+      )
     );
 
     console.log("✅ stats.json загружен");
   } catch (error) {
-    console.error("❌ Ошибка загрузки stats.json:", error);
+    console.error(
+      "❌ Ошибка загрузки stats.json:",
+      error
+    );
+
     stats = {};
   }
 }
@@ -97,11 +119,18 @@ function saveStats() {
   try {
     fs.writeFileSync(
       STATS_FILE,
-      JSON.stringify(stats, null, 2),
+      JSON.stringify(
+        stats,
+        null,
+        2
+      ),
       "utf8"
     );
   } catch (error) {
-    console.error("❌ Ошибка сохранения stats.json:", error);
+    console.error(
+      "❌ Ошибка сохранения stats.json:",
+      error
+    );
   }
 }
 
@@ -129,16 +158,24 @@ loadStats();
 // DAILY RESET
 // ======================================================
 
-let lastResetDate = new Date().toISOString().slice(0, 10);
+let lastResetDate =
+  new Date()
+    .toISOString()
+    .slice(0, 10);
 
 function checkDailyReset() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today =
+    new Date()
+      .toISOString()
+      .slice(0, 10);
 
   if (today === lastResetDate) {
     return;
   }
 
-  console.log("📅 Новый день — сбрасываю дневную статистику");
+  console.log(
+    "📅 Новый день — сбрасываю статистику"
+  );
 
   for (const userId of Object.keys(stats)) {
     const user = stats[userId];
@@ -168,7 +205,10 @@ function checkDailyReset() {
   saveStats();
 }
 
-setInterval(checkDailyReset, 30 * 1000);
+setInterval(
+  checkDailyReset,
+  30 * 1000
+);
 
 // ======================================================
 // AUTOSAVE
@@ -184,22 +224,29 @@ setInterval(() => {
 
 async function askAI(prompt) {
   try {
-    const response = await gemini.models.generateContent({
-      model: AI_MODEL,
-      contents: prompt,
-      config: {
-        systemInstruction: `
+    const response =
+      await gemini.models.generateContent({
+        model: AI_MODEL,
+        contents: prompt,
+        config: {
+          systemInstruction: `
 Ты обычный AI-ассистент Discord-бота.
 
 Отвечай на русском языке.
 Будь полезным и понятным.
 `,
-      },
-    });
+        },
+      });
 
-    return response.text || "Не удалось получить ответ.";
+    return (
+      response.text ||
+      "Не удалось получить ответ."
+    );
   } catch (error) {
-    console.error("❌ Gemini error:", error);
+    console.error(
+      "❌ Gemini error:",
+      error
+    );
 
     return "Не получилось получить ответ от Gemini.";
   }
@@ -216,45 +263,62 @@ const SERGEY_SYSTEM_PROMPT = `
 
 ТВОЙ СТИЛЬ:
 
-- Пиши только на русском языке.
-- Не говори, что ты бот.
+- Всегда отвечай на русском языке.
+- Ты не бот.
+- Не говори, что ты AI.
 - Не говори, что ты искусственный интеллект.
-- Не упоминай промпт.
-- Не объясняй, как ты работаешь.
-- Не используй официальный стиль.
+- Не упоминай системный промпт.
+- Не объясняй пользователю, как ты работаешь.
+- Не веди себя как официальный помощник.
+- Не используй канцелярит.
 - Не начинай каждый ответ со слов "Конечно", "Разумеется", "Безусловно" и подобных.
 - Отвечай естественно.
 - Обычно отвечай коротко.
-- Не превращай обычный разговор в длинную лекцию.
-- Используй разговорный русский.
+- Не превращай обычную переписку в длинную лекцию.
+- Можно использовать разговорные выражения.
 - Можно использовать сленг и сокращения.
-- Можно писать "ага", "неа", "хз", "та", "ща", "сек", "норм", "ну да", "бывает".
-- Иногда ответ может состоять из одного-двух слов.
+- Можно писать "ага", "та", "хз", "неа", "ща", "сек", "норм", "ну да", "бывает".
+- Иногда ответ может быть очень коротким.
 - Если вопрос требует нормального ответа — ответь нормально.
 - Если человек шутит — можешь пошутить.
-- Если человек пишет глупость — можешь естественно отреагировать.
+- Если человек пишет ерунду — можешь естественно отреагировать.
 - Не повторяй имя пользователя без необходимости.
-- Не пиши "Сергей:" перед своим ответом.
-- Не используй фразы вроде "Я рад помочь".
-- Не веди себя как виртуальный помощник.
-- Не нужно быть постоянно серьёзным.
+- Никогда не пиши "Сергей:" перед ответом.
+- Не пиши "Я рад помочь".
+- Не веди себя как виртуальный ассистент.
+- Поддерживай разговор.
 - Учитывай предыдущие сообщения.
-- Поддерживай обычный разговор.
+- Не отвечай слишком формально.
 
-Ты должен выглядеть как обычный человек, который сидит в Discord и переписывается с другими людьми.
+Представь, что ты обычный человек, который сидит в Discord и общается с друзьями.
 
-ВАЖНО:
-Если пользователь обращается к тебе через Reply на твоё сообщение, продолжай разговор так, будто это обычная переписка.
+Если сообщение короткое — ответ обычно тоже должен быть коротким.
+Если человек просто поздоровался — можно просто поздороваться.
+Если человек спрашивает что-то простое — не нужно писать огромный ответ.
+
+Главное — естественная переписка.
 `;
 
-const sergeyHistory = new Map();
+const sergeyHistory =
+  new Map();
 
-function getSergeyHistory(channelId) {
-  if (!sergeyHistory.has(channelId)) {
-    sergeyHistory.set(channelId, []);
+function getSergeyHistory(
+  channelId
+) {
+  if (
+    !sergeyHistory.has(
+      channelId
+    )
+  ) {
+    sergeyHistory.set(
+      channelId,
+      []
+    );
   }
 
-  return sergeyHistory.get(channelId);
+  return sergeyHistory.get(
+    channelId
+  );
 }
 
 function addSergeyHistory(
@@ -263,7 +327,10 @@ function addSergeyHistory(
   name,
   content
 ) {
-  const history = getSergeyHistory(channelId);
+  const history =
+    getSergeyHistory(
+      channelId
+    );
 
   history.push({
     role,
@@ -271,7 +338,7 @@ function addSergeyHistory(
     content,
   });
 
-  // Последние 20 сообщений
+  // Храним последние 20 сообщений
   if (history.length > 20) {
     history.splice(
       0,
@@ -284,20 +351,27 @@ function buildSergeyPrompt(
   channelId,
   currentMessage
 ) {
-  const history = getSergeyHistory(channelId);
+  const history =
+    getSergeyHistory(
+      channelId
+    );
 
   let context = "";
 
-  for (const message of history) {
-    context += `${message.name}: ${message.content}\n`;
+  for (const msg of history) {
+    context +=
+      `${msg.name}: ${msg.content}\n`;
   }
 
   return `
 ${SERGEY_SYSTEM_PROMPT}
 
-ПОСЛЕДНИЕ СООБЩЕНИЯ ЧАТА:
+ПОСЛЕДНИЕ СООБЩЕНИЯ В ЧАТЕ:
 
-${context || "(контекста пока нет)"}
+${
+  context ||
+  "(контекста пока нет)"
+}
 
 НОВОЕ СООБЩЕНИЕ:
 
@@ -306,8 +380,8 @@ ${currentMessage}
 Ответь на последнее сообщение.
 
 Не пиши "Сергей:".
-Не пиши объяснений о своей роли.
-Просто дай естественный ответ.
+Не объясняй свою роль.
+Просто напиши естественный ответ в стиле обычного Discord-чата.
 `;
 }
 
@@ -316,10 +390,11 @@ async function askSergey(
   content
 ) {
   try {
-    const prompt = buildSergeyPrompt(
-      channelId,
-      content
-    );
+    const prompt =
+      buildSergeyPrompt(
+        channelId,
+        content
+      );
 
     console.log(
       `🤖 Сергей получает: "${content}"`
@@ -332,7 +407,9 @@ async function askSergey(
         config: {
           systemInstruction:
             SERGEY_SYSTEM_PROMPT,
+
           temperature: 0.9,
+
           maxOutputTokens: 250,
         },
       });
@@ -349,10 +426,11 @@ async function askSergey(
     }
 
     // Убираем случайное "Сергей:"
-    answer = answer.replace(
-      /^сергей\s*:\s*/i,
-      ""
-    );
+    answer =
+      answer.replace(
+        /^сергей\s*:\s*/i,
+        ""
+      );
 
     console.log(
       `🤖 Сергей отвечает: "${answer}"`
@@ -370,19 +448,26 @@ async function askSergey(
 }
 
 // ======================================================
-// SERGEY MESSAGE DETECTION
+// ПРОВЕРКА ОБРАЩЕНИЯ "СЕРГЕЙ"
 // ======================================================
 
-function isSergeyMention(content) {
-  return /^сергей\b/i.test(
+function isSergeyMention(
+  content
+) {
+  return /^сергей(?=\s|$|[,.!?;:])/iu.test(
     content.trim()
   );
 }
 
-function removeSergeyMention(content) {
+function removeSergeyMention(
+  content
+) {
   return content
     .trim()
-    .replace(/^сергей\b/i, "")
+    .replace(
+      /^сергей(?=\s|$|[,.!?;:])/iu,
+      ""
+    )
     .trim()
     .replace(
       /^[,:;.!?\-–—]+\s*/,
@@ -391,8 +476,16 @@ function removeSergeyMention(content) {
     .trim();
 }
 
-async function isReplyToSergey(message) {
-  if (!message.reference?.messageId) {
+// ======================================================
+// ПРОВЕРКА REPLY СЕРГЕЮ
+// ======================================================
+
+async function isReplyToSergey(
+  message
+) {
+  if (
+    !message.reference?.messageId
+  ) {
     return false;
   }
 
@@ -409,15 +502,10 @@ async function isReplyToSergey(message) {
         );
     }
 
-    const result =
+    return (
       referencedMessage.author?.id ===
-      client.user.id;
-
-    console.log(
-      `↩️ Reply проверка: ${result}`
+      client.user.id
     );
-
-    return result;
   } catch (error) {
     console.error(
       "Ошибка проверки Reply:",
@@ -606,9 +694,10 @@ async function registerCommands() {
       "🔄 Регистрирую Slash-команды..."
     );
 
-    const rest = new REST({
-      version: "10",
-    }).setToken(TOKEN);
+    const rest =
+      new REST({
+        version: "10",
+      }).setToken(TOKEN);
 
     await rest.put(
       Routes.applicationCommands(
@@ -637,8 +726,6 @@ async function registerCommands() {
 client.on(
   "messageCreate",
   async message => {
-    // ЭТОТ ЛОГ ДОЛЖЕН ПОЯВЛЯТЬСЯ НА ЛЮБОЕ
-    // СООБЩЕНИЕ В СЕРВЕРЕ
     console.log(
       "📩 MESSAGE EVENT СРАБОТАЛ"
     );
@@ -651,26 +738,20 @@ client.on(
       `📩 Текст: "${message.content}"`
     );
 
+    // Только сервер
     if (!message.guild) {
-      console.log(
-        "⏭️ Это не сообщение сервера"
-      );
-
       return;
     }
 
+    // Не реагируем на ботов
     if (message.author.bot) {
-      console.log(
-        "⏭️ Сообщение от бота"
-      );
-
       return;
     }
 
     checkDailyReset();
 
     // ==================================================
-    // STATS
+    // MESSAGE STATS
     // ==================================================
 
     const userStats =
@@ -681,53 +762,65 @@ client.on(
     userStats.messages++;
 
     // ==================================================
-    // SERGEY
+    // СЕРГЕЙ
     // ==================================================
 
-    const mentionedByName =
+    const byName =
       isSergeyMention(
         message.content
       );
 
-    const repliedToSergey =
+    const replyToSergey =
       await isReplyToSergey(
         message
       );
 
     console.log(
-      `🔎 Сергей по имени: ${mentionedByName}`
+      `🔎 Сергей по имени: ${byName}`
     );
 
     console.log(
-      `🔎 Reply Сергею: ${repliedToSergey}`
+      `🔎 Reply Сергею: ${replyToSergey}`
     );
 
+    // Если ни имя, ни Reply —
+    // ничего не делаем
     if (
-      !mentionedByName &&
-      !repliedToSergey
+      !byName &&
+      !replyToSergey
     ) {
       return;
     }
 
+    // ==================================================
+    // ТЕКСТ ПОЛЬЗОВАТЕЛЯ
+    // ==================================================
+
     let userText =
       message.content.trim();
 
-    // Если обращение через имя —
-    // убираем "Сергей"
-    if (mentionedByName) {
+    // Если написали:
+    // Сергей привет
+    //
+    // превращаем в:
+    // привет
+
+    if (byName) {
       userText =
         removeSergeyMention(
           userText
         );
     }
 
+    // Если написали просто:
+    // Сергей
     if (!userText) {
       userText =
         "просто обратился к тебе";
     }
 
     // ==================================================
-    // HISTORY
+    // CONTEXT
     // ==================================================
 
     addSergeyHistory(
@@ -744,15 +837,10 @@ client.on(
 
     try {
       await message.channel.sendTyping();
-    } catch (error) {
-      console.error(
-        "Ошибка sendTyping:",
-        error
-      );
-    }
+    } catch {}
 
     // ==================================================
-    // HUMAN-LIKE DELAY
+    // ЗАДЕРЖКА
     // ==================================================
 
     const delay =
@@ -780,7 +868,7 @@ client.on(
       );
 
     // ==================================================
-    // SAVE SERGEY MESSAGE
+    // SAVE CONTEXT
     // ==================================================
 
     addSergeyHistory(
@@ -791,27 +879,32 @@ client.on(
     );
 
     // ==================================================
-    // REPLY
+    // ОТПРАВКА В КАНАЛ
     // ==================================================
 
     try {
-      await message.reply({
+      // ВАЖНО:
+      // НЕ message.reply()
+      //
+      // Сергей пишет обычным сообщением
+      // прямо в канал.
+
+      await message.channel.send({
         content: answer.slice(
           0,
           2000
         ),
-
         allowedMentions: {
-          repliedUser: false,
+          parse: [],
         },
       });
 
       console.log(
-        "✅ Сергей отправил ответ"
+        "✅ Сергей написал в канал"
       );
     } catch (error) {
       console.error(
-        "❌ Ошибка отправки ответа Сергея:",
+        "❌ Ошибка отправки Сергея:",
         error
       );
     }
@@ -851,7 +944,7 @@ client.on(
     const newChannel =
       newState.channelId;
 
-    // Вошёл
+    // Вошёл в голосовой
     if (
       !oldChannel &&
       newChannel
@@ -956,7 +1049,6 @@ client.on(
         playingActivity
       );
 
-    // Начал играть
     if (
       !wasGaming &&
       isGaming
@@ -970,7 +1062,6 @@ client.on(
       return;
     }
 
-    // Продолжает играть
     if (
       wasGaming &&
       isGaming
@@ -981,7 +1072,6 @@ client.on(
       return;
     }
 
-    // Закончил
     if (
       wasGaming &&
       !isGaming
@@ -1046,6 +1136,10 @@ async function createStatsCard(
   const ctx =
     canvas.getContext("2d");
 
+  // ==================================================
+  // FONT
+  // ==================================================
+
   if (
     fs.existsSync(
       FONT_FILE
@@ -1059,6 +1153,10 @@ async function createStatsCard(
     } catch {}
   }
 
+  // ==================================================
+  // BACKGROUND
+  // ==================================================
+
   ctx.fillStyle =
     "#101010";
 
@@ -1068,6 +1166,10 @@ async function createStatsCard(
     width,
     height
   );
+
+  // ==================================================
+  // TEMPLATE
+  // ==================================================
 
   if (
     fs.existsSync(
@@ -1100,7 +1202,10 @@ async function createStatsCard(
       user.id
     );
 
-  // Аватар
+  // ==================================================
+  // AVATAR
+  // ==================================================
+
   try {
     const avatarUrl =
       user.displayAvatarURL({
@@ -1126,6 +1231,7 @@ async function createStatsCard(
     );
 
     ctx.closePath();
+
     ctx.clip();
 
     ctx.drawImage(
@@ -1139,12 +1245,15 @@ async function createStatsCard(
     ctx.restore();
   } catch (error) {
     console.error(
-      "Ошибка аватара:",
+      "Ошибка загрузки аватара:",
       error
     );
   }
 
-  // Имя
+  // ==================================================
+  // USERNAME
+  // ==================================================
+
   ctx.textAlign =
     "center";
 
@@ -1161,7 +1270,10 @@ async function createStatsCard(
     530
   );
 
-  // Карточки
+  // ==================================================
+  // STATS
+  // ==================================================
+
   const cards = [
     {
       title: "VOICE",
@@ -1173,6 +1285,7 @@ async function createStatsCard(
       x: 180,
       y: 680,
     },
+
     {
       title: "MESSAGE",
       value:
@@ -1183,6 +1296,7 @@ async function createStatsCard(
       x: 560,
       y: 680,
     },
+
     {
       title: "DISCORD",
       value:
@@ -1193,6 +1307,7 @@ async function createStatsCard(
       x: 940,
       y: 680,
     },
+
     {
       title: "GAMING",
       value:
@@ -1236,6 +1351,10 @@ async function createStatsCard(
     );
   }
 
+  // ==================================================
+  // GAMING
+  // ==================================================
+
   ctx.font =
     "28px StatsFont, sans-serif";
 
@@ -1256,7 +1375,7 @@ async function createStatsCard(
 }
 
 // ======================================================
-// SLASH COMMAND INTERACTIONS
+// INTERACTIONS
 // ======================================================
 
 client.on(
@@ -1270,7 +1389,7 @@ client.on(
 
     try {
       // =================================================
-      // STATS
+      // /STATS
       // =================================================
 
       if (
@@ -1311,7 +1430,7 @@ client.on(
       }
 
       // =================================================
-      // AI
+      // /AI
       // =================================================
 
       if (
@@ -1341,7 +1460,7 @@ client.on(
       }
 
       // =================================================
-      // COINFLIP
+      // /COINFLIP
       // =================================================
 
       if (
@@ -1361,7 +1480,7 @@ client.on(
       }
 
       // =================================================
-      // DICE
+      // /DICE
       // =================================================
 
       if (
@@ -1381,7 +1500,7 @@ client.on(
       }
 
       // =================================================
-      // 8BALL
+      // /8BALL
       // =================================================
 
       if (
@@ -1404,7 +1523,7 @@ client.on(
       }
 
       // =================================================
-      // RIDDLE
+      // /RIDDLE
       // =================================================
 
       if (
@@ -1427,7 +1546,7 @@ client.on(
       }
 
       // =================================================
-      // FACT
+      // /FACT
       // =================================================
 
       if (
@@ -1450,7 +1569,7 @@ client.on(
       }
 
       // =================================================
-      // JOKE
+      // /JOKE
       // =================================================
 
       if (
@@ -1473,7 +1592,7 @@ client.on(
       }
 
       // =================================================
-      // QUOTE
+      // /QUOTE
       // =================================================
 
       if (
@@ -1496,7 +1615,7 @@ client.on(
       }
 
       // =================================================
-      // POLL
+      // /POLL
       // =================================================
 
       if (
@@ -1604,17 +1723,15 @@ client.on(
     }
 
     try {
-      await interaction.reply(
-        {
-          content:
-            interaction.customId ===
-            "poll_yes"
-              ? "👍 Ты выбрал **Да**"
-              : "👎 Ты выбрал **Нет**",
+      await interaction.reply({
+        content:
+          interaction.customId ===
+          "poll_yes"
+            ? "👍 Ты выбрал **Да**"
+            : "👎 Ты выбрал **Нет**",
 
-          ephemeral: true,
-        }
-      );
+        ephemeral: true,
+      });
     } catch (error) {
       console.error(
         "Ошибка poll:",
@@ -1635,21 +1752,31 @@ client.once(
     console.log(
       "================================="
     );
+
     console.log(
       `✅ БОТ ЗАПУЩЕН: ${client.user.tag}`
     );
+
     console.log(
       `🆔 ID: ${client.user.id}`
     );
+
     console.log(
       `🏠 Серверов: ${client.guilds.cache.size}`
     );
+
     console.log(
-      "📩 MessageContent включён в коде"
+      "📩 Message Content Intent указан"
     );
+
+    console.log(
+      "🤖 Сергей включён"
+    );
+
     console.log(
       "================================="
     );
+
     console.log("");
 
     client.user.setPresence({
@@ -1660,6 +1787,7 @@ client.once(
             ActivityType.Watching,
         },
       ],
+
       status: "online",
     });
 
